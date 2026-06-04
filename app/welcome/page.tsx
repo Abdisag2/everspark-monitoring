@@ -19,19 +19,24 @@ export default function WelcomePage() {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
-  // Supabase parses the invite token from the URL and establishes a session.
+  // Supabase parses the invite token from the URL hash and establishes a session.
   useEffect(() => {
     const supabase = getSupabase();
     if (!supabase) { setChecking(false); return; }
 
+    let resolved = false;
+    const found = (e?: string | null) => { resolved = true; setEmail(e ?? null); setChecking(false); };
+
     const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (session?.user) { setEmail(session.user.email ?? null); setChecking(false); }
+      if (session?.user && !resolved) found(session.user.email);
     });
     supabase.auth.getSession().then(({ data }) => {
-      if (data.session?.user) setEmail(data.session.user.email ?? null);
-      setChecking(false);
+      if (data.session?.user && !resolved) found(data.session.user.email);
     });
-    return () => sub.subscription.unsubscribe();
+    // Give token parsing up to 3s before declaring the link invalid.
+    const t = setTimeout(() => { if (!resolved) setChecking(false); }, 3000);
+
+    return () => { sub.subscription.unsubscribe(); clearTimeout(t); };
   }, []);
 
   const submit = async (e: React.FormEvent) => {
