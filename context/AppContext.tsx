@@ -20,6 +20,25 @@ const profileToUser = (p: Profile): AppUser => ({
   id: p.id, email: p.email, name: p.name, role: p.role, organization_id: p.organization_id,
 });
 
+/** Coerce a Supabase telemetry_data row (numerics may arrive as strings) into our type. */
+function normalizeTelemetry(r: any): TelemetryRecord {
+  const bit = (v: any): 0 | 1 => (Number(v) >= 0.5 ? 1 : 0);
+  return {
+    id: Number(r.id),
+    device_id: r.device_id,
+    flow_rate: Number(r.flow_rate),
+    voltage: Number(r.voltage),
+    level_sensor_1: bit(r.level_sensor_1),
+    level_sensor_2: bit(r.level_sensor_2),
+    level_sensor_3: bit(r.level_sensor_3),
+    naclo_pumped: Number(r.naclo_pumped),
+    target_frc: Number(r.target_frc),
+    active_chlorine: Number(r.active_chlorine),
+    ph_value: Number(r.ph_value),
+    timestamp: r.timestamp,
+  };
+}
+
 /** Demo identities behind the "View as…" switcher. Manager/Viewer scope to org-001. */
 export const DEMO_USERS: Record<UserRole, AppUser> = {
   admin:   { id: 'user-001', email: 'admin@eversparktech.com', role: 'admin',   organization_id: null,      name: 'System Administrator' },
@@ -86,11 +105,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [authReady, setAuthReady] = useState(false);
   const pwOverrides = useRef<Record<string, string>>({});
   const [currentUser, setCurrentUser] = useState<AppUser>(DEMO_USERS.admin);
-  const [organizations, setOrgs] = useState<Organization[]>(MOCK_ORGANIZATIONS);
-  const [profiles, setProfiles] = useState<Profile[]>(MOCK_PROFILES);
-  const [devices, setDevices] = useState<Device[]>(MOCK_DEVICES);
-  const [telemetry, setTelemetry] = useState<TelemetryRecord[]>(MOCK_TELEMETRY);
-  const [alarms, setAlarms] = useState<AlarmRecord[]>(MOCK_ALARMS);
+  // Live mode (Supabase configured) starts empty and loads from the DB; demo mode seeds mock data.
+  const [organizations, setOrgs] = useState<Organization[]>(isSupabaseConfigured ? [] : MOCK_ORGANIZATIONS);
+  const [profiles, setProfiles] = useState<Profile[]>(isSupabaseConfigured ? [] : MOCK_PROFILES);
+  const [devices, setDevices] = useState<Device[]>(isSupabaseConfigured ? [] : MOCK_DEVICES);
+  const [telemetry, setTelemetry] = useState<TelemetryRecord[]>(isSupabaseConfigured ? [] : MOCK_TELEMETRY);
+  const [alarms, setAlarms] = useState<AlarmRecord[]>(isSupabaseConfigured ? [] : MOCK_ALARMS);
   const [simPackets, setSimPackets] = useState<SimPacket[]>([]);
   const [panelState, setPanelState] = useState<PanelState>({ view: 'admin-dashboard' });
 
@@ -203,43 +223,90 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const setPanel = useCallback((p: PanelState) => setPanelState(p), []);
 
+  // ----- Live data sync (Supabase) -----
+  // RLS scopes every query to the signed-in user, so this is multi-tenant safe.
+  const refresh = useCallback(async () => {
+    const supabase = getSupabase();
+    if (!supabase) return;
+    const [orgsR, devsR, profsR, telR] = await Promise.all([
+      supabase.from('organizations').select('*').order('created_at', { ascending: true }),
+      supabase.from('devices').select('*').order('created_at', { ascending: true }),
+      supabase.from('profiles').select('*'),
+      supabase.from('telemetry_data').select('*').order('timestamp', { ascending: false }).limit(500),
+    ]);
+    if (orgsR.data) setOrgs(orgsR.data as Organization[]);
+    if (devsR.data) setDevices(devsR.data as Device[]);
+    if (profsR.data) setProfiles(profsR.data as Profile[]);
+    if (telR.data) setTelemetry((telR.data as any[]).map(normalizeTelemetry));
+  }, []);
+  const live = isSupabaseConfigured;
+  const sb = () => getSupabase()!;
+
+  // Initial load + lightweight polling so the dashboard reflects live hardware data.
+  useEffect(() => {
+    if (!live || !authReady || !authUser) return;
+    let active = true;
+    refresh();
+    const id = setInterval(() => { if (active) refresh(); }, 8000);
+    return () => { active = false; clearInterval(id); };
+  }, [live, authReady, authUser, refresh]);
+
   // ----- Organizations -----
-  const addOrg = useCallback((name: string) =>
-    setOrgs((p) => [...p, { id: `org-${seq()}`, name, created_at: new Date().toISOString() }]), []);
-  const updateOrg = useCallback((id: string, name: string) =>
-    setOrgs((p) => p.map((o) => (o.id === id ? { ...o, name } : o))), []);
+  const addOrg = useCallback((name: string) => {
+    setOrgs((p) => [...p, { id: `org-${seq()}`, name, created_at: new Date().toISOString() }]);
+    if (live) sb().from('organizations').insert({ name }).then(() => refresh());
+  }, [live, refresh]);
+  const updateOrg = useCallback((id: string, name: string) => {
+    setOrgs((p) => p.map((o) => (o.id === id ? { ...o, name } : o)));
+    if (live) sb().from('organizations').update({ name }).eq('id', id).then(() => refresh());
+  }, [live, refresh]);
   const deleteOrg = useCallback((id: string) => {
     setOrgs((p) => p.filter((o) => o.id !== id));
     setDevices((p) => p.filter((d) => d.organization_id !== id));
     setProfiles((p) => p.filter((u) => u.organization_id !== id));
-  }, []);
+    if (live) sb().from('organizations').delete().eq('id', id).then(() => refresh()); // FK cascade clears devices/telemetry
+  }, [live, refresh]);
 
-  // ----- Profiles -----
+  // ----- Profiles ----- (creation in live mode goes through /api/invite)
   const addProfile = useCallback((data: Omit<Profile, 'id' | 'created_at'>) =>
     setProfiles((p) => [...p, { ...data, id: `user-${seq()}`, created_at: new Date().toISOString() }]), []);
-  const updateProfile = useCallback((id: string, u: Partial<Profile>) =>
-    setProfiles((p) => p.map((x) => (x.id === id ? { ...x, ...u } : x))), []);
-  const deleteProfile = useCallback((id: string) =>
-    setProfiles((p) => p.filter((x) => x.id !== id)), []);
+  const updateProfile = useCallback((id: string, u: Partial<Profile>) => {
+    setProfiles((p) => p.map((x) => (x.id === id ? { ...x, ...u } : x)));
+    if (live) sb().from('profiles').update(u).eq('id', id).then(() => refresh());
+  }, [live, refresh]);
+  const deleteProfile = useCallback((id: string) => {
+    setProfiles((p) => p.filter((x) => x.id !== id));
+    if (live) sb().from('profiles').delete().eq('id', id).then(() => refresh());
+  }, [live, refresh]);
 
   // ----- Devices -----
   const addDevice = useCallback((data: { name: string; organization_id: string; location?: string; system_id?: string }) => {
+    const token = generateToken();
     const d: Device = {
-      id: `dev-${seq()}`, ...data, secret_token: generateToken(),
+      id: `dev-${seq()}`, ...data, secret_token: token,
       status: 'offline', last_seen: null, created_at: new Date().toISOString(),
     };
     setDevices((p) => [...p, d]);
+    if (live) sb().from('devices').insert({
+      name: d.name, organization_id: d.organization_id, secret_token: token,
+      status: 'offline', location: d.location ?? null, system_id: d.system_id ?? null,
+    }).then(() => refresh());
     return d;
-  }, []);
-  const updateDevice = useCallback((id: string, u: Partial<Device>) =>
-    setDevices((p) => p.map((d) => (d.id === id ? { ...d, ...u } : d))), []);
-  const deleteDevice = useCallback((id: string) =>
-    setDevices((p) => p.filter((d) => d.id !== id)), []);
+  }, [live, refresh]);
+  const updateDevice = useCallback((id: string, u: Partial<Device>) => {
+    setDevices((p) => p.map((d) => (d.id === id ? { ...d, ...u } : d)));
+    if (live) sb().from('devices').update(u).eq('id', id).then(() => refresh());
+  }, [live, refresh]);
+  const deleteDevice = useCallback((id: string) => {
+    setDevices((p) => p.filter((d) => d.id !== id));
+    if (live) sb().from('devices').delete().eq('id', id).then(() => refresh());
+  }, [live, refresh]);
   const regenerateToken = useCallback((id: string) => {
     const t = generateToken();
     setDevices((p) => p.map((d) => (d.id === id ? { ...d, secret_token: t } : d)));
+    if (live) sb().from('devices').update({ secret_token: t }).eq('id', id).then(() => refresh());
     return t;
-  }, []);
+  }, [live, refresh]);
 
   // ----- Telemetry ingest + alarm engine -----
   const ingestTelemetry = useCallback((token: string, dataStr: string) => {
