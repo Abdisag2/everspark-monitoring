@@ -1,11 +1,12 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { Users, UserPlus, Pencil, Trash2, Search, Ban, CheckCircle2, ShieldAlert } from 'lucide-react';
+import { Users, UserPlus, Pencil, Trash2, Search, Ban, CheckCircle2, ShieldAlert, MailCheck, AlertCircle } from 'lucide-react';
 import { useApp } from '@/context/AppContext';
 import { Modal } from '@/components/shared/Modal';
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import { RolePill } from '@/components/shared/StatusBadge';
+import { getSupabase, isSupabaseConfigured } from '@/lib/supabase';
 import { cn, initials } from '@/lib/utils';
 import type { Profile, UserRole } from '@/lib/types';
 
@@ -26,6 +27,9 @@ export function MemberDirectory({
   const [creating, setCreating] = useState(false);
   const [deleting, setDeleting] = useState<Profile | null>(null);
   const [form, setForm] = useState<FormState>({ name: '', email: '', organization_id: '', role: 'viewer' });
+  const [busy, setBusy] = useState(false);
+  const [formError, setFormError] = useState('');
+  const [toast, setToast] = useState('');
 
   const roleOptions: UserRole[] = allowAdminRole ? ['admin', 'manager', 'viewer'] : ['manager', 'viewer'];
   const orgOptions = scopeOrgId ? organizations.filter((o) => o.id === scopeOrgId) : organizations;
@@ -39,21 +43,58 @@ export function MemberDirectory({
       .filter((p) => p.name.toLowerCase().includes(q) || p.email.toLowerCase().includes(q));
   }, [profiles, query, roleFilter, scopeOrgId]);
 
-  const openCreate = () => { setForm({ name: '', email: '', organization_id: scopeOrgId ?? orgOptions[0]?.id ?? '', role: 'viewer' }); setCreating(true); };
-  const openEdit = (p: Profile) => { setForm({ name: p.name, email: p.email, organization_id: p.organization_id ?? '', role: p.role }); setEditing(p); };
+  const openCreate = () => { setForm({ name: '', email: '', organization_id: scopeOrgId ?? orgOptions[0]?.id ?? '', role: 'viewer' }); setFormError(''); setCreating(true); };
+  const openEdit = (p: Profile) => { setForm({ name: p.name, email: p.email, organization_id: p.organization_id ?? '', role: p.role }); setFormError(''); setEditing(p); };
+  const closeModal = () => { setCreating(false); setEditing(null); setFormError(''); };
 
-  const save = () => {
-    if (!form.name.trim() || !form.email.trim()) return;
+  const save = async () => {
+    if (!form.name.trim() || !form.email.trim() || busy) return;
     // Guard: managers may never create/elevate to admin
     const role = !allowAdminRole && form.role === 'admin' ? 'manager' : form.role;
     const org = role === 'admin' ? null : (form.organization_id || null);
-    if (editing) updateProfile(editing.id, { name: form.name.trim(), email: form.email.trim(), role, organization_id: org });
-    else addProfile({ name: form.name.trim(), email: form.email.trim(), role, organization_id: org, is_active: true });
-    setEditing(null); setCreating(false);
+
+    // Editing an existing member (local update).
+    if (editing) {
+      updateProfile(editing.id, { name: form.name.trim(), email: form.email.trim(), role, organization_id: org });
+      closeModal();
+      return;
+    }
+
+    // New member: send a real email invitation when Supabase is connected.
+    if (isSupabaseConfigured) {
+      setBusy(true); setFormError('');
+      try {
+        const { data: { session } } = await getSupabase()!.auth.getSession();
+        const res = await fetch('/api/invite', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token ?? ''}` },
+          body: JSON.stringify({ email: form.email.trim(), name: form.name.trim(), role, organization_id: org }),
+        });
+        const json = await res.json().catch(() => ({}));
+        setBusy(false);
+        if (!res.ok) { setFormError(json.error ?? 'Failed to send invitation'); return; }
+        closeModal();
+        setToast(`Invitation email sent to ${form.email.trim()}.`);
+        setTimeout(() => setToast(''), 6000);
+      } catch (err: any) {
+        setBusy(false);
+        setFormError(err?.message ?? 'Network error — please try again.');
+      }
+      return;
+    }
+
+    // Demo mode: add to the local directory.
+    addProfile({ name: form.name.trim(), email: form.email.trim(), role, organization_id: org, is_active: true });
+    closeModal();
   };
 
   return (
     <div className="space-y-5 animate-fade-in">
+      {toast && (
+        <div className="flex items-center gap-2 rounded-xl bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700 ring-1 ring-emerald-200 animate-scale-in">
+          <MailCheck size={16} className="shrink-0" /> {toast}
+        </div>
+      )}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h2 className="text-lg font-bold text-ink">{title}</h2>
@@ -128,14 +169,18 @@ export function MemberDirectory({
       {/* Create / Edit member modal */}
       <Modal
         open={creating || !!editing}
-        onClose={() => { setCreating(false); setEditing(null); }}
+        onClose={closeModal}
         title={editing ? 'Edit Member' : 'Invite Member'}
-        description={editing ? 'Update this account’s details and access.' : 'Add a new account and assign their role.'}
+        description={editing
+          ? 'Update this account’s details and access.'
+          : isSupabaseConfigured ? 'We’ll email them an invitation link to set their password.' : 'Add a new account and assign their role.'}
         size="lg"
         footer={
           <>
-            <button onClick={() => { setCreating(false); setEditing(null); }} className="btn-outline">Cancel</button>
-            <button onClick={save} disabled={!form.name.trim() || !form.email.trim()} className="btn-primary">{editing ? 'Save changes' : 'Send invite'}</button>
+            <button onClick={closeModal} className="btn-outline">Cancel</button>
+            <button onClick={save} disabled={!form.name.trim() || !form.email.trim() || busy} className="btn-primary">
+              {busy ? 'Sending…' : editing ? 'Save changes' : isSupabaseConfigured ? 'Send invitation' : 'Add member'}
+            </button>
           </>
         }
       >
@@ -169,6 +214,11 @@ export function MemberDirectory({
         {!allowAdminRole && (
           <p className="mt-4 flex items-start gap-2 rounded-xl bg-amber-50 px-3 py-2.5 text-xs text-amber-700">
             <ShieldAlert size={14} className="shrink-0 mt-0.5" /> Managers can assign <strong>manager</strong> or <strong>viewer</strong> roles only — promotion to admin is restricted.
+          </p>
+        )}
+        {formError && (
+          <p className="mt-4 flex items-start gap-2 rounded-xl bg-rose-50 px-3 py-2.5 text-sm text-rose-600">
+            <AlertCircle size={15} className="shrink-0 mt-0.5" /> {formError}
           </p>
         )}
       </Modal>
