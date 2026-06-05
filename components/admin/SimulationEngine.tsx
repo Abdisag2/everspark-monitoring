@@ -41,7 +41,7 @@ const MANUAL_FIELDS: { key: keyof ParsedFrame; label: string; min: number; max: 
 ];
 
 export function SimulationEngine() {
-  const { devices, ingestTelemetry, addSimPacket, simPackets } = useApp();
+  const { devices, telemetry, ingestTelemetry, addSimPacket } = useApp();
   const [deviceId, setDeviceId] = useState(devices[0]?.id ?? '');
   const [mode, setMode] = useState<Mode>('realistic');
   const [interval, setIntervalMs] = useState(2000);
@@ -51,6 +51,7 @@ export function SimulationEngine() {
   const phaseRef = useRef(0);
 
   const device = devices.find((d) => d.id === deviceId);
+  const deviceName = (id: string) => devices.find((d) => d.id === id)?.name ?? id;
 
   // Stable send function reading latest values via refs
   const cfg = useRef({ device, mode, manual, hitEndpoint });
@@ -117,7 +118,7 @@ export function SimulationEngine() {
         <span className="grid place-items-center h-12 w-12 rounded-2xl bg-brand-50 text-brand-600 ring-4 ring-brand-50/60"><Radio size={22} /></span>
         <div>
           <h2 className="text-lg font-bold text-ink">Telemetry Simulator</h2>
-          <p className="text-sm text-slate-500">Emulate SIM800L field-node POSTs to test the live dashboards & alarms</p>
+          <p className="text-sm text-slate-500">Inject test frames on the left — watch real hardware telemetry arrive live on the right</p>
         </div>
       </div>
 
@@ -211,28 +212,36 @@ export function SimulationEngine() {
             <pre className="p-4 bg-slate-900 text-[12.5px] leading-relaxed overflow-x-auto"><code className="font-mono text-slate-300 break-all whitespace-pre-wrap">{previewPayload || 'Select a device…'}</code></pre>
           </div>
 
-          {/* Sent ledger */}
+          {/* Live incoming telemetry — REAL frames received from hardware (via the ingest endpoint → Supabase) */}
           <div className="card overflow-hidden">
             <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-100">
               <div className="flex items-center gap-2">
-                <Wifi size={16} className="text-brand-600" />
-                <h3 className="text-sm font-bold text-ink">Transmitted Packets</h3>
-                <span className="chip bg-slate-100 text-slate-500">{simPackets.length}</span>
+                <Wifi size={16} className="text-emerald-600" />
+                <h3 className="text-sm font-bold text-ink">Live Incoming Telemetry</h3>
+                <span className="chip bg-emerald-50 text-emerald-600">{telemetry.length}</span>
               </div>
+              <span className="inline-flex items-center gap-1.5 text-[11px] text-slate-400">
+                <span className="relative inline-flex h-2 w-2">
+                  <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-60 pulse-dot" />
+                  <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+                </span>
+                real frames · auto-refresh
+              </span>
             </div>
             <div className="max-h-[420px] overflow-y-auto divide-y divide-slate-50">
-              {simPackets.length === 0 && (
-                <p className="px-5 py-12 text-center text-sm text-slate-400">No packets sent yet. Hit <strong>Send 1</strong> or <strong>Start stream</strong>.</p>
+              {telemetry.length === 0 && (
+                <p className="px-5 py-12 text-center text-sm text-slate-400">
+                  No telemetry received yet. Power up a field node — real frames appear here within seconds.
+                </p>
               )}
-              {simPackets.map((p) => (
-                <div key={p.id} className="px-5 py-2.5 slide-in hover:bg-slate-50/70">
+              {telemetry.slice(0, 50).map((t) => (
+                <div key={t.id} className="px-5 py-2.5 slide-in hover:bg-slate-50/70">
                   <div className="flex items-center gap-2">
-                    <span className={cn('h-1.5 w-1.5 rounded-full shrink-0', p.status === 'ok' ? 'bg-emerald-500' : 'bg-rose-500')} />
-                    <span className="font-mono text-[11px] text-slate-400 tabular-nums">{fmtTime(p.timestamp)}</span>
-                    <span className="text-xs text-slate-600 truncate">{p.device_name}</span>
-                    {p.status === 'error' && <span className="ml-auto text-[11px] text-rose-500">{p.error}</span>}
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 shrink-0" />
+                    <span className="font-mono text-[11px] text-slate-400 tabular-nums">{fmtTime(t.timestamp)}</span>
+                    <span className="text-xs text-slate-600 truncate">{deviceName(t.device_id)}</span>
                   </div>
-                  <code className="block mt-1 font-mono text-[11px] text-slate-500 break-all">{p.data_string}</code>
+                  <code className="block mt-1 font-mono text-[11px] text-slate-500 break-all">{buildDataString(t)}</code>
                 </div>
               ))}
             </div>
