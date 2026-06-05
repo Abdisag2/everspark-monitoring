@@ -51,7 +51,7 @@ export function SimulationEngine() {
   const phaseRef = useRef(0);
 
   const device = devices.find((d) => d.id === deviceId);
-  const deviceName = (id: string) => devices.find((d) => d.id === id)?.name ?? id;
+  const liveForDevice = telemetry.filter((t) => t.device_id === deviceId);
 
   // Stable send function reading latest values via refs
   const cfg = useRef({ device, mode, manual, hitEndpoint });
@@ -212,34 +212,36 @@ export function SimulationEngine() {
             <pre className="p-4 bg-slate-900 text-[12.5px] leading-relaxed overflow-x-auto"><code className="font-mono text-slate-300 break-all whitespace-pre-wrap">{previewPayload || 'Select a device…'}</code></pre>
           </div>
 
-          {/* Live incoming telemetry — REAL frames received from hardware (via the ingest endpoint → Supabase) */}
+          {/* Live incoming telemetry for the SELECTED target device (real frames via Supabase) */}
           <div className="card overflow-hidden">
-            <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-100">
-              <div className="flex items-center gap-2">
-                <Wifi size={16} className="text-emerald-600" />
-                <h3 className="text-sm font-bold text-ink">Live Incoming Telemetry</h3>
-                <span className="chip bg-emerald-50 text-emerald-600">{telemetry.length}</span>
+            <div className="flex items-start justify-between gap-3 px-5 py-3.5 border-b border-slate-100">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <Wifi size={16} className="text-emerald-600 shrink-0" />
+                  <h3 className="text-sm font-bold text-ink">Live Incoming Telemetry</h3>
+                  <span className="chip bg-emerald-50 text-emerald-600">{liveForDevice.length}</span>
+                </div>
+                <p className="text-[11px] text-slate-400 mt-0.5 ml-6 truncate">{device ? device.name : 'No device selected'}</p>
               </div>
-              <span className="inline-flex items-center gap-1.5 text-[11px] text-slate-400">
+              <span className="inline-flex items-center gap-1.5 text-[11px] text-slate-400 shrink-0 whitespace-nowrap">
                 <span className="relative inline-flex h-2 w-2">
                   <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-60 pulse-dot" />
                   <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
                 </span>
-                real frames · auto-refresh
+                real · auto-refresh
               </span>
             </div>
             <div className="max-h-[420px] overflow-y-auto divide-y divide-slate-50">
-              {telemetry.length === 0 && (
+              {liveForDevice.length === 0 && (
                 <p className="px-5 py-12 text-center text-sm text-slate-400">
-                  No telemetry received yet. Power up a field node — real frames appear here within seconds.
+                  No telemetry received yet for <span className="font-medium text-slate-500">{device ? device.name : 'this device'}</span>. Frames appear within seconds of each transmission.
                 </p>
               )}
-              {telemetry.slice(0, 50).map((t) => (
+              {liveForDevice.slice(0, 50).map((t) => (
                 <div key={t.id} className="px-5 py-2.5 slide-in hover:bg-slate-50/70">
                   <div className="flex items-center gap-2">
                     <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 shrink-0" />
                     <span className="font-mono text-[11px] text-slate-400 tabular-nums">{fmtTime(t.timestamp)}</span>
-                    <span className="text-xs text-slate-600 truncate">{deviceName(t.device_id)}</span>
                   </div>
                   <code className="block mt-1 font-mono text-[11px] text-slate-500 break-all">{buildDataString(t)}</code>
                 </div>
