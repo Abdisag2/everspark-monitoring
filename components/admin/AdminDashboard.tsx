@@ -1,14 +1,14 @@
 'use client';
 
 import { useMemo } from 'react';
-import { Building2, Cpu, Wifi, WifiOff, Radio, ArrowRight } from 'lucide-react';
+import { Building2, Cpu, Wifi, WifiOff, Radio, ArrowRight, CheckCheck } from 'lucide-react';
 import { useApp } from '@/context/AppContext';
 import { MetricCard } from '@/components/shared/MetricCard';
 import { StatusDot } from '@/components/shared/StatusBadge';
 import { cn, fmtTime, timeAgo } from '@/lib/utils';
 
 export function AdminDashboard() {
-  const { organizations, devices, telemetry, alarms, setPanel } = useApp();
+  const { organizations, devices, telemetry, alarms, setPanel, acknowledgeAlarm } = useApp();
 
   const online = devices.filter((d) => d.status === 'online').length;
   const offline = devices.length - online;
@@ -113,10 +113,19 @@ export function AdminDashboard() {
             <div className="divide-y divide-slate-50 max-h-60 overflow-y-auto">
               {openAlarms.length === 0 && <p className="px-5 py-8 text-center text-sm text-slate-400">All systems nominal</p>}
               {openAlarms.map((a) => (
-                <div key={a.id} className="px-5 py-3">
-                  <div className="flex items-center justify-between">
+                <div key={a.id} className="px-5 py-3 group">
+                  <div className="flex items-center justify-between gap-2">
                     <span className="text-xs font-semibold text-rose-600 capitalize">{a.alarm_type.replace(/_/g, ' ')}</span>
-                    <span className="text-[11px] text-slate-400">{timeAgo(a.timestamp)}</span>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className="text-[11px] text-slate-400">{timeAgo(a.timestamp)}</span>
+                      <button
+                        onClick={() => acknowledgeAlarm(a.id)}
+                        className="inline-flex items-center gap-1 rounded-lg px-2 py-0.5 text-[11px] font-semibold text-slate-500 hover:bg-emerald-50 hover:text-emerald-600 transition-colors cursor-pointer"
+                        title="Acknowledge"
+                      >
+                        <CheckCheck size={13} /> Ack
+                      </button>
+                    </div>
                   </div>
                   <p className="mt-0.5 text-xs text-slate-500 truncate" title={deviceName(a.device_id)}>{deviceName(a.device_id)}</p>
                 </div>

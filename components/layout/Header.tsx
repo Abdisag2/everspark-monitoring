@@ -1,17 +1,19 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Bell, Search, Building2, ChevronRight } from 'lucide-react';
+import { Bell, Search, Building2, ChevronRight, Check } from 'lucide-react';
 import { useApp } from '@/context/AppContext';
 import { NAV_BY_ROLE } from '@/lib/nav';
-import { cn, fmtTime } from '@/lib/utils';
+import { cn, fmtTime, timeAgo } from '@/lib/utils';
 
 const EXTRA_TITLES: Record<string, { label: string; desc: string }> = {
   'device-monitoring': { label: 'Device Monitoring', desc: 'Live telemetry & history' },
 };
 
 export function Header() {
-  const { currentUser, panelState, organizations, getUnackedAlarms } = useApp();
+  const { currentUser, panelState, organizations, devices, getUnackedAlarms, acknowledgeAlarm } = useApp();
+  const canAck = currentUser.role !== 'viewer';
+  const deviceName = (id: string) => devices.find((d) => d.id === id)?.name ?? id;
   const [time, setTime] = useState<string>('');
   const [bellOpen, setBellOpen] = useState(false);
   const unacked = getUnackedAlarms();
@@ -84,10 +86,23 @@ export function Header() {
                   )}
                   {unacked.map((a) => (
                     <div key={a.id} className="px-4 py-3 hover:bg-slate-50">
-                      <div className="flex items-center gap-1.5">
-                        <span className="h-1.5 w-1.5 rounded-full bg-rose-500" />
-                        <span className="text-xs font-semibold text-rose-600 capitalize">{a.alarm_type.replace(/_/g, ' ')}</span>
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <span className="h-1.5 w-1.5 rounded-full bg-rose-500 shrink-0" />
+                          <span className="text-xs font-semibold text-rose-600 capitalize">{a.alarm_type.replace(/_/g, ' ')}</span>
+                          <span className="text-[11px] text-slate-400 shrink-0">· {timeAgo(a.timestamp)}</span>
+                        </div>
+                        {canAck && (
+                          <button
+                            onClick={() => acknowledgeAlarm(a.id)}
+                            className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-semibold text-slate-500 hover:bg-emerald-50 hover:text-emerald-600 transition-colors cursor-pointer shrink-0"
+                            title="Acknowledge"
+                          >
+                            <Check size={13} /> Ack
+                          </button>
+                        )}
                       </div>
+                      <p className="mt-0.5 text-[11px] text-slate-400 truncate">{deviceName(a.device_id)}</p>
                       <p className="mt-1 text-xs text-slate-600 leading-snug">{a.message}</p>
                     </div>
                   ))}
