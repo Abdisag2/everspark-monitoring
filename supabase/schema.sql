@@ -64,6 +64,19 @@ create table if not exists public.telemetry_data (
 );
 create index if not exists telemetry_device_ts_idx on public.telemetry_data(device_id, timestamp desc);
 
+-- ----------------------------------------------------------------------------
+-- 5. alarms  (raised server-side by the ingest endpoint on hardware events)
+-- ----------------------------------------------------------------------------
+create table if not exists public.alarms (
+  id            uuid primary key default gen_random_uuid(),
+  device_id     uuid not null references public.devices(id) on delete cascade,
+  alarm_type    text not null check (alarm_type in ('production_complete','no_naclo')),
+  message       text not null,
+  acknowledged  boolean not null default false,
+  timestamp     timestamptz not null default now()
+);
+create index if not exists alarms_device_idx on public.alarms(device_id, timestamp desc);
+
 -- ============================================================================
 -- Helper functions  (SECURITY DEFINER to avoid recursive RLS on profiles)
 -- ============================================================================
@@ -89,6 +102,7 @@ alter table public.organizations  enable row level security;
 alter table public.profiles        enable row level security;
 alter table public.devices         enable row level security;
 alter table public.telemetry_data  enable row level security;
+alter table public.alarms          enable row level security;
 
 -- ---- organizations ----------------------------------------------------------
 -- Admin: everything. Manager/Viewer: SELECT only their own org.
@@ -158,6 +172,32 @@ create policy telemetry_member_select on public.telemetry_data
   );
 -- NOTE: hardware ingest writes via the service-role key in /api/ingest, which
 -- bypasses RLS. No anon INSERT policy is granted on telemetry_data on purpose.
+
+-- ---- alarms -----------------------------------------------------------------
+create policy alarms_admin_all on public.alarms
+  for all using (public.is_admin()) with check (public.is_admin());
+-- Members read alarms for devices in their org.
+create policy alarms_member_select on public.alarms
+  for select using (
+    exists (
+      select 1 from public.devices d
+      where d.id = alarms.device_id and d.organization_id = public.current_org()
+    )
+  );
+-- Members may acknowledge (update) alarms for their org's devices.
+create policy alarms_member_ack on public.alarms
+  for update using (
+    exists (
+      select 1 from public.devices d
+      where d.id = alarms.device_id and d.organization_id = public.current_org()
+    )
+  ) with check (
+    exists (
+      select 1 from public.devices d
+      where d.id = alarms.device_id and d.organization_id = public.current_org()
+    )
+  );
+-- Alarms are raised server-side via the service-role key (ingest), bypassing RLS.
 
 -- ============================================================================
 -- Auto-create a profile row when a new auth user signs up

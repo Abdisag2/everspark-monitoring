@@ -66,6 +66,16 @@ export async function POST(request: NextRequest) {
   }
 
   const ts = new Date().toISOString();
+
+  // Previous frame's level_sensor_1 for the production-complete transition.
+  const { data: prevRows } = await supabase
+    .from('telemetry_data')
+    .select('level_sensor_1')
+    .eq('device_id', device.id)
+    .order('timestamp', { ascending: false })
+    .limit(1);
+  const prevL1 = prevRows?.[0] ? Number(prevRows[0].level_sensor_1) : null;
+
   const { error: insErr } = await supabase
     .from('telemetry_data')
     .insert({ device_id: device.id, ...parsed, timestamp: ts });
@@ -73,6 +83,28 @@ export async function POST(request: NextRequest) {
   if (insErr) return NextResponse.json({ error: insErr.message }, { status: 500 });
 
   await supabase.from('devices').update({ status: 'online', last_seen: ts }).eq('id', device.id);
+
+  // ---- Server-side alarm engine ----
+  if (prevL1 === 1 && parsed.level_sensor_1 === 0 && parsed.level_sensor_2 === 0) {
+    await supabase.from('alarms').insert({
+      device_id: device.id, alarm_type: 'production_complete',
+      message: 'Chlorine production is completed. Please start a new production.', timestamp: ts,
+    });
+  }
+  if (parsed.level_sensor_3 === 1) {
+    const since = new Date(Date.now() - 3600e3).toISOString();
+    const { data: recent } = await supabase
+      .from('alarms')
+      .select('id')
+      .eq('device_id', device.id).eq('alarm_type', 'no_naclo').eq('acknowledged', false)
+      .gte('timestamp', since).limit(1);
+    if (!recent || recent.length === 0) {
+      await supabase.from('alarms').insert({
+        device_id: device.id, alarm_type: 'no_naclo',
+        message: 'There is no Chlorine in the Clara system. Please immediately start a new production.', timestamp: ts,
+      });
+    }
+  }
 
   return NextResponse.json({ status: 'ok', mode: 'persisted', device: device.name, received_at: ts, parsed });
 }

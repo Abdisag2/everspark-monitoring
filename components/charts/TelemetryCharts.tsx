@@ -9,14 +9,22 @@ import type { TelemetryRecord } from '@/lib/types';
 const AXIS = { stroke: '#94a3b8', fontSize: 11, fontFamily: 'JetBrains Mono, monospace' };
 const GRID = '#eef2f5';
 
-/** Telemetry comes newest-first; charts want oldest→newest with a short time label. */
+/** Telemetry comes newest-first; charts want oldest→newest with an adaptive axis label. */
 function toSeries(data: TelemetryRecord[]) {
-  return [...data]
-    .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
-    .map((t) => ({
+  const sorted = [...data].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+  const spanMs = sorted.length > 1
+    ? new Date(sorted[sorted.length - 1].timestamp).getTime() - new Date(sorted[0].timestamp).getTime()
+    : 0;
+  const longRange = spanMs > 2 * 86400e3; // > 2 days → show dates instead of clock time
+  return sorted.map((t) => {
+    const d = new Date(t.timestamp);
+    return {
       ...t,
-      t: new Date(t.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-    }));
+      t: longRange
+        ? d.toLocaleDateString([], { month: 'short', day: 'numeric' })
+        : d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    };
+  });
 }
 
 export function ChartCard({

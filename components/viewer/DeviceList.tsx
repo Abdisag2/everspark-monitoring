@@ -6,6 +6,7 @@ import { Search, Cpu, Wifi, FlaskConical, Bell, ArrowRight, Droplets, Gauge } fr
 import { useApp } from '@/context/AppContext';
 import { MetricCard } from '@/components/shared/MetricCard';
 import { StatusBadge } from '@/components/shared/StatusBadge';
+import { LiveHardwareFeed } from '@/components/shared/LiveHardwareFeed';
 import { timeAgo, cn } from '@/lib/utils';
 import type { PanelView } from '@/lib/types';
 
@@ -121,6 +122,8 @@ export function DeviceList({ backView = 'viewer-devices', compact = false }: { b
           </div>
         )}
       </div>
+
+      {!compact && <LiveHardwareFeed />}
     </div>
   );
 }

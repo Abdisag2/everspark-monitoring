@@ -228,16 +228,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const refresh = useCallback(async () => {
     const supabase = getSupabase();
     if (!supabase) return;
-    const [orgsR, devsR, profsR, telR] = await Promise.all([
+    const [orgsR, devsR, profsR, telR, almR] = await Promise.all([
       supabase.from('organizations').select('*').order('created_at', { ascending: true }),
       supabase.from('devices').select('*').order('created_at', { ascending: true }),
       supabase.from('profiles').select('*'),
       supabase.from('telemetry_data').select('*').order('timestamp', { ascending: false }).limit(500),
+      supabase.from('alarms').select('*').order('timestamp', { ascending: false }).limit(200),
     ]);
     if (orgsR.data) setOrgs(orgsR.data as Organization[]);
     if (devsR.data) setDevices(devsR.data as Device[]);
     if (profsR.data) setProfiles(profsR.data as Profile[]);
     if (telR.data) setTelemetry((telR.data as any[]).map(normalizeTelemetry));
+    if (almR.data) setAlarms(almR.data as AlarmRecord[]);
   }, []);
   const live = isSupabaseConfigured;
   const sb = () => getSupabase()!;
@@ -349,8 +351,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const addSimPacket = useCallback((p: SimPacket) =>
     setSimPackets((prev) => [p, ...prev.slice(0, 49)]), []);
-  const acknowledgeAlarm = useCallback((id: string) =>
-    setAlarms((p) => p.map((a) => (a.id === id ? { ...a, acknowledged: true } : a))), []);
+  const acknowledgeAlarm = useCallback((id: string) => {
+    setAlarms((p) => p.map((a) => (a.id === id ? { ...a, acknowledged: true } : a)));
+    if (live) sb().from('alarms').update({ acknowledged: true }).eq('id', id).then(() => refresh());
+  }, [live, refresh]);
 
   // ----- RLS-style scoped selectors -----
   const getOrgDevices = useCallback((orgId: string) =>

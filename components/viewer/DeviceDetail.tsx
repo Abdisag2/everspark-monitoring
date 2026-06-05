@@ -11,24 +11,22 @@ import { MetricCard } from '@/components/shared/MetricCard';
 import {
   ChartCard, FlowRateChart, ProductionStateChart, VoltageChart, ChlorinePhChart,
 } from '@/components/charts/TelemetryCharts';
-import { rangeStart, timeAgo, fmtDateTime, cn } from '@/lib/utils';
-import type { PanelView, TimeRange } from '@/lib/types';
-
-const RANGES: { id: TimeRange; label: string }[] = [
-  { id: '6h', label: '6h' }, { id: '24h', label: '24h' }, { id: '7d', label: '7d' }, { id: '30d', label: '30d' },
-];
+import { timeAgo, fmtDateTime, cn } from '@/lib/utils';
+import { rangeStartMs, rangeShort } from '@/lib/timeRanges';
+import { TimeRangePicker } from '@/components/shared/TimeRangePicker';
+import type { PanelView } from '@/lib/types';
 
 export function DeviceDetail({ deviceId, backView }: { deviceId: string; backView?: PanelView }) {
   const { devices, getDeviceTelemetry, getLatestTelemetry, organizations, setPanel } = useApp();
-  const [range, setRange] = useState<TimeRange>('24h');
+  const [range, setRange] = useState<string>('24h');
   const [showRaw, setShowRaw] = useState(false);
 
   const device = devices.find((d) => d.id === deviceId);
-  const all = getDeviceTelemetry(deviceId, 1000);
+  const all = getDeviceTelemetry(deviceId, 5000);
   const latest = getLatestTelemetry(deviceId);
 
   const inRange = useMemo(() => {
-    const start = rangeStart(range);
+    const start = rangeStartMs(range);
     return all.filter((t) => new Date(t.timestamp).getTime() >= start);
   }, [all, range]);
 
@@ -83,11 +81,7 @@ export function DeviceDetail({ deviceId, backView }: { deviceId: string; backVie
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          <div className="flex items-center gap-1 p-1 rounded-xl bg-slate-100">
-            {RANGES.map((r) => (
-              <button key={r.id} onClick={() => setRange(r.id)} className={cn('px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer', range === r.id ? 'bg-white text-ink shadow-sm' : 'text-slate-500 hover:text-ink')}>{r.label}</button>
-            ))}
-          </div>
+          <TimeRangePicker value={range} onChange={setRange} />
           <button onClick={exportCsv} className="btn-outline py-2"><Download size={15} /> Export</button>
         </div>
       </div>
@@ -95,8 +89,8 @@ export function DeviceDetail({ deviceId, backView }: { deviceId: string; backVie
       {/* Metric cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-4">
         <MetricCard label="Last Connection" value={timeAgo(device.last_seen)} icon={Clock} accent="accent" hint={`${inRange.length} frames`} />
-        <MetricCard label="Water Flow Total" value={stats.flowTotalM3.toFixed(2)} unit="m³" icon={Droplets} accent="brand" hint={`in ${range}`} />
-        <MetricCard label="NaClO Consumed" value={stats.nacloL.toFixed(1)} unit="L" icon={FlaskConical} accent="violet" hint={`in ${range}`} />
+        <MetricCard label="Water Flow Total" value={stats.flowTotalM3.toFixed(2)} unit="m³" icon={Droplets} accent="brand" hint={`in ${rangeShort(range)}`} />
+        <MetricCard label="NaClO Consumed" value={stats.nacloL.toFixed(1)} unit="L" icon={FlaskConical} accent="violet" hint={`in ${rangeShort(range)}`} />
         <div className="card p-5">
           <div className="flex items-start justify-between">
             <span className="text-[13px] font-medium text-slate-500">NaClO Available</span>
@@ -133,7 +127,7 @@ export function DeviceDetail({ deviceId, backView }: { deviceId: string; backVie
             <span className="grid place-items-center h-8 w-8 rounded-lg bg-slate-100 text-slate-500"><Activity size={16} /></span>
             <div className="text-left">
               <h3 className="text-sm font-bold text-ink">Raw Telemetry</h3>
-              <p className="text-xs text-slate-400">{inRange.length} frames in {range} · verify exact values & parameters</p>
+              <p className="text-xs text-slate-400">{inRange.length} frames in {rangeShort(range)} · verify exact values & parameters</p>
             </div>
           </div>
           <ChevronDown size={18} className={cn('text-slate-400 transition-transform', showRaw && 'rotate-180')} />
