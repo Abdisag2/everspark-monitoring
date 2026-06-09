@@ -1,0 +1,13 @@
+{
+  "name": "everspark-ingest",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Ever Spark hardware ingest — HTTP server + MQTT subscriber for field nodes.",
+  "scripts": {
+    "http": "node server.js",
+    "mqtt": "node mqtt-subscriber.js"
+  },
+  "dependencies": {
+    "mqtt": "^5.7.0"
+  }
+}
