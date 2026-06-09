@@ -64,10 +64,18 @@ export function FlowRateChart({ data }: { data: TelemetryRecord[] }) {
   const series = toSeries(data);
   return (
     <ResponsiveContainer width="100%" height="100%">
-      <ScatterChart margin={{ top: 8, right: 8, bottom: 0, left: -16 }}>
+      <ScatterChart margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
         <CartesianGrid stroke={GRID} />
         <XAxis dataKey="t" tick={AXIS} tickLine={false} axisLine={{ stroke: GRID }} minTickGap={40} />
-        <YAxis tick={AXIS} tickLine={false} axisLine={false} unit=" L/m" width={56} />
+        <YAxis
+          tick={AXIS}
+          tickLine={false}
+          axisLine={false}
+          width={44}
+          domain={[0, 'auto']}
+          allowDecimals
+          tickFormatter={(v) => (Math.abs(v) >= 10 ? Number(v).toFixed(0) : Number(v).toFixed(1))}
+        />
         <ZAxis range={[26, 26]} />
         <Tooltip content={<CustomTooltip unit=" L/min" />} cursor={{ stroke: '#cbd5e1', strokeDasharray: '4 4' }} />
         <Scatter name="Flow Rate" data={series} dataKey="flow_rate" fill="#0d8e87" fillOpacity={0.75} />
