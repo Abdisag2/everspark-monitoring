@@ -119,7 +119,7 @@ export async function POST(request: NextRequest) {
       // Skip rules scoped to a different device
       if (rule.device_id && rule.device_id !== device.id) continue;
 
-      const frameValue = (parsed as Record<string, number>)[rule.parameter];
+      const frameValue = (parsed as unknown as Record<string, number>)[rule.parameter];
       if (frameValue === undefined) continue;
 
       const threshold = Number(rule.threshold);

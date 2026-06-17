@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo } from 'react';
-import { Cpu, Wifi, WifiOff, Users, Radio, ArrowRight } from 'lucide-react';
+import { Cpu, Wifi, WifiOff, Users, Radio, ArrowRight, Download } from 'lucide-react';
 import { useApp } from '@/context/AppContext';
 import { MetricCard } from '@/components/shared/MetricCard';
 import { DeviceList } from '@/components/viewer/DeviceList';
@@ -11,6 +11,16 @@ export function ManagerDashboard() {
   const { currentUser, getVisibleDevices, getVisibleProfiles, telemetry, setPanel } = useApp();
   const devices = getVisibleDevices();
   const members = getVisibleProfiles();
+
+  function exportAll() {
+    const orgId = currentUser.organization_id;
+    if (!orgId) return;
+    const url = `/api/export?org_id=${orgId}&devices=all`;
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = '';
+    a.click();
+  }
 
   const online = devices.filter((d) => d.status === 'online').length;
   const deviceIds = useMemo(() => new Set(devices.map((d) => d.id)), [devices]);
@@ -69,7 +79,12 @@ export function ManagerDashboard() {
 
       {/* Operational device grid (reuses the read-only monitoring cards, scoped) */}
       <div>
-        <h3 className="text-sm font-bold text-ink mb-3">Operational Grid</h3>
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-bold text-ink">Operational Grid</h3>
+          <button onClick={exportAll} className="btn-ghost text-xs flex items-center gap-1.5">
+            <Download size={13} /> Export All
+          </button>
+        </div>
         <DeviceList backView="manager-dashboard" compact />
       </div>
     </div>
