@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import './globals.css';
 import { AppProvider } from '@/context/AppContext';
+import { ToastProvider } from '@/components/shared/ToastProvider';
 
 export const metadata: Metadata = {
   title: 'Ever Spark Monitoring',
@@ -11,7 +12,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en">
       <body>
-        <AppProvider>{children}</AppProvider>
+        <AppProvider>
+          <ToastProvider>{children}</ToastProvider>
+        </AppProvider>
       </body>
     </html>
   );

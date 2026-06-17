@@ -79,7 +79,10 @@ export function DeviceList({ backView = 'viewer-devices', compact = false }: { b
             <button
               key={d.id}
               onClick={() => setPanel({ view: 'device-monitoring', deviceId: d.id, backView })}
-              className="card p-5 text-left group hover:shadow-card-hover hover:-translate-y-0.5 transition-all duration-200 cursor-pointer"
+              className={cn(
+                'card p-5 text-left group hover:shadow-card-hover hover:-translate-y-0.5 transition-all duration-200 cursor-pointer',
+                d.status === 'offline' && 'ring-2 ring-rose-400 ring-offset-2 animate-pulse',
+              )}
             >
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
