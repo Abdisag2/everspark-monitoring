@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo } from 'react';
-import { Building2, Cpu, Wifi, WifiOff, Radio, ArrowRight, CheckCheck } from 'lucide-react';
+import { Building2, Cpu, Wifi, WifiOff, Radio, ArrowRight, CheckCheck, Download, ShieldAlert } from 'lucide-react';
 import { useApp } from '@/context/AppContext';
 import { MetricCard } from '@/components/shared/MetricCard';
 import { StatusDot } from '@/components/shared/StatusBadge';
@@ -26,6 +26,31 @@ export function AdminDashboard() {
 
   return (
     <div className="space-y-6 animate-fade-in">
+
+      {/* Page header with quick actions */}
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div>
+          <h1 className="text-xl font-bold text-ink">Admin Dashboard</h1>
+          <p className="text-sm text-slate-500">{organizations.length} organizations · {devices.length} devices</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setPanel({ view: 'roles' })}
+            className="btn-ghost text-sm flex items-center gap-2"
+          >
+            <ShieldAlert size={15} />
+            Roles &amp; Permissions
+          </button>
+          <button
+            onClick={() => setPanel({ view: 'alarm-rules' })}
+            className="btn-ghost text-sm flex items-center gap-2"
+          >
+            <Download size={15} />
+            Alarm Rules
+          </button>
+        </div>
+      </div>
+
       {/* Metric row */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         <MetricCard label="Active Organizations" value={organizations.length} icon={Building2} accent="accent" hint="client enterprises" />
