@@ -5,6 +5,7 @@ import { Cpu, Wifi, WifiOff, Users, Radio, ArrowRight, Download } from 'lucide-r
 import { useApp } from '@/context/AppContext';
 import { MetricCard } from '@/components/shared/MetricCard';
 import { DeviceList } from '@/components/viewer/DeviceList';
+import { getSessionToken } from '@/lib/supabase';
 import { fmtTime } from '@/lib/utils';
 
 export function ManagerDashboard() {
@@ -12,14 +13,22 @@ export function ManagerDashboard() {
   const devices = getVisibleDevices();
   const members = getVisibleProfiles();
 
-  function exportAll() {
+  async function exportAll() {
     const orgId = currentUser.organization_id;
     if (!orgId) return;
+    const token = await getSessionToken();
     const url = `/api/export?org_id=${orgId}&devices=all`;
+    const res = await fetch(url, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) return;
+    const blob = await res.blob();
+    const href = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url;
-    a.download = '';
+    a.href = href;
+    a.download = `everspark-export-${new Date().toISOString().slice(0, 10)}.csv`;
     a.click();
+    URL.revokeObjectURL(href);
   }
 
   const online = devices.filter((d) => d.status === 'online').length;

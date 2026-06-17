@@ -146,19 +146,62 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   // ----- Auth -----
   // Restore a persisted session on mount (localStorage is client-only).
   useEffect(() => {
-    try {
-      const stored = localStorage.getItem(PW_KEY);
-      if (stored) pwOverrides.current = JSON.parse(stored);
-      const id = localStorage.getItem(SESSION_KEY);
-      const p = id ? MOCK_PROFILES.find((x) => x.id === id) : null;
-      if (p && p.is_active) {
-        const u = profileToUser(p);
-        setAuthUser(u);
-        setCurrentUser(u);
-        setPanelState(landingPanel(u.role));
-      }
-    } catch { /* ignore */ }
-    setAuthReady(true);
+    if (isSupabaseConfigured) {
+      // Live mode: restore from Supabase's built-in session storage, then load the profile.
+      const supabase = getSupabase()!;
+      supabase.auth.getSession().then(async ({ data: { session } }) => {
+        if (session?.user) {
+          const { data: prof } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', session.user.id)
+            .single();
+          if (prof) {
+            const u = profileToUser(prof as Profile);
+            setAuthUser(u);
+            setCurrentUser(u);
+            setPanelState(landingPanel(u.role));
+          }
+        }
+        setAuthReady(true);
+      });
+
+      // Keep session in sync with Supabase auth state changes (token refresh, sign-out)
+      const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+        if (event === 'SIGNED_OUT' || !session) {
+          setAuthUser(null);
+          return;
+        }
+        if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+          const { data: prof } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', session.user.id)
+            .single();
+          if (prof) {
+            const u = profileToUser(prof as Profile);
+            setAuthUser(u);
+            setCurrentUser(u);
+          }
+        }
+      });
+      return () => subscription.unsubscribe();
+    } else {
+      // Demo mode: restore from localStorage mock session
+      try {
+        const stored = localStorage.getItem(PW_KEY);
+        if (stored) pwOverrides.current = JSON.parse(stored);
+        const id = localStorage.getItem(SESSION_KEY);
+        const p = id ? MOCK_PROFILES.find((x) => x.id === id) : null;
+        if (p && p.is_active) {
+          const u = profileToUser(p);
+          setAuthUser(u);
+          setCurrentUser(u);
+          setPanelState(landingPanel(u.role));
+        }
+      } catch { /* ignore */ }
+      setAuthReady(true);
+    }
   }, []);
 
   const login = useCallback(async (email: string, password: string) => {
@@ -171,9 +214,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (error || !data.user) return { ok: false, error: error?.message ?? 'Sign-in failed' };
       const { data: prof } = await supabase.from('profiles').select('*').eq('id', data.user.id).single();
       if (!prof) return { ok: false, error: 'No profile linked to this account' };
+      if (!(prof as Profile).is_active) return { ok: false, error: 'This account is suspended. Contact an administrator.' };
       const u = profileToUser(prof as Profile);
       setAuthUser(u); setCurrentUser(u); setPanelState(landingPanel(u.role));
-      try { localStorage.setItem(SESSION_KEY, u.id); } catch {}
+      // Supabase persists the session token internally; no need for localStorage in live mode.
       return { ok: true };
     }
 
@@ -190,9 +234,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const logout = useCallback(() => {
-    try { localStorage.removeItem(SESSION_KEY); } catch {}
-    if (isSupabaseConfigured) getSupabase()?.auth.signOut();
-    setAuthUser(null);
+    if (isSupabaseConfigured) {
+      getSupabase()?.auth.signOut(); // onAuthStateChange handles setAuthUser(null)
+    } else {
+      try { localStorage.removeItem(SESSION_KEY); } catch {}
+      setAuthUser(null);
+    }
   }, []);
 
   const accountExists = useCallback((email: string) =>
@@ -251,13 +298,19 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       supabase.from('alarms').select('*').order('timestamp', { ascending: false }).limit(200),
       supabase.from('roles').select('*'),
       supabase.from('role_permissions').select('*'),
-      supabase.from('alarm_rules').select('*'),
+      supabase.from('alarm_rules').select('*').eq('is_active', true),
     ]);
     if (orgsR.data) setOrgs(orgsR.data as Organization[]);
     if (devsR.data) setDevices(devsR.data as Device[]);
     if (profsR.data) setProfiles(profsR.data as Profile[]);
     if (telR.data) setTelemetry((telR.data as any[]).map(normalizeTelemetry));
-    if (almR.data) setAlarms(almR.data as AlarmRecord[]);
+    if (almR.data) setAlarms((almR.data as any[]).map((a) => ({
+      ...a,
+      severity: a.severity ?? undefined,
+      rule_id: a.rule_id ?? undefined,
+      parameter: a.parameter ?? undefined,
+      value: a.value !== null ? Number(a.value) : undefined,
+    }) as AlarmRecord));
     if (rolesR.data) setRoles(rolesR.data as Role[]);
     if (rpR.data) setRolePerms(rpR.data as RolePermission[]);
     if (rulesR.data) setAlarmRules(rulesR.data as AlarmRule[]);

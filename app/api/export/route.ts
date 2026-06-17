@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSupabaseAdmin, getSupabase } from '@/lib/supabase';
+import { getSupabaseAdmin } from '@/lib/supabase';
 
 /**
  * GET /api/export?org_id=<id>&from=<ISO>&to=<ISO>&devices=all
@@ -24,27 +24,27 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Supabase not configured — export requires live mode' }, { status: 503 });
   }
 
-  // Verify the caller's session and org scope
+  // Verify the caller's session and org scope via admin client
   const authHeader = request.headers.get('authorization') ?? '';
   const jwt = authHeader.replace(/^Bearer\s+/i, '');
   if (!jwt) return NextResponse.json({ error: 'Missing authorization token' }, { status: 401 });
 
-  const sessionClient = getSupabase();
-  if (sessionClient) {
-    const { data: { user }, error: authErr } = await sessionClient.auth.getUser(jwt);
-    if (authErr || !user) return NextResponse.json({ error: 'Invalid session' }, { status: 401 });
+  const { data: { user }, error: authErr } = await supabase.auth.getUser(jwt);
+  if (authErr || !user) return NextResponse.json({ error: 'Invalid or expired session' }, { status: 401 });
 
-    const { data: profile } = await supabase.from('profiles').select('role, organization_id').eq('id', user.id).single();
-    if (!profile) return NextResponse.json({ error: 'No profile found' }, { status: 403 });
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('role, organization_id')
+    .eq('id', user.id)
+    .single();
+  if (!profile) return NextResponse.json({ error: 'No profile found' }, { status: 403 });
 
-    // Managers can only export their own org
-    if (profile.role === 'manager' && profile.organization_id !== orgId) {
-      return NextResponse.json({ error: 'Forbidden: can only export your own organization' }, { status: 403 });
-    }
-    // Viewers cannot export
-    if (profile.role === 'viewer') {
-      return NextResponse.json({ error: 'Forbidden: insufficient permissions' }, { status: 403 });
-    }
+  // Managers can only export their own org; viewers cannot export
+  if (profile.role === 'viewer') {
+    return NextResponse.json({ error: 'Forbidden: insufficient permissions' }, { status: 403 });
+  }
+  if (profile.role === 'manager' && profile.organization_id !== orgId) {
+    return NextResponse.json({ error: 'Forbidden: can only export your own organization' }, { status: 403 });
   }
 
   // Fetch devices for the org

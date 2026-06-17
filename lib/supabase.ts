@@ -70,3 +70,14 @@ class MockQuery<T extends Row> implements PromiseLike<{ data: T[] | null; error:
 export function mockFrom<T extends Row>(rows: T[]) {
   return new MockQuery<T>(rows);
 }
+
+/**
+ * Get the current session's access token for use in API route Authorization headers.
+ * Returns null in demo mode or if no active session.
+ */
+export async function getSessionToken(): Promise<string | null> {
+  const client = getSupabase();
+  if (!client) return null;
+  const { data: { session } } = await client.auth.getSession();
+  return session?.access_token ?? null;
+}
