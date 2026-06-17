@@ -1,5 +1,6 @@
 import {
   LayoutDashboard, Building2, Cpu, Users, Radio, Settings, UserPlus, MonitorDot,
+  ShieldCheck, Bell,
   type LucideIcon,
 } from 'lucide-react';
 import type { PanelView, UserRole } from './types';
@@ -38,6 +39,12 @@ export const NAV_BY_ROLE: Record<UserRole, NavSection[]> = {
         { view: 'simulation', label: 'Telemetry Simulator', icon: Radio, desc: 'Mock SIM800L posts' },
       ],
     },
+    {
+      heading: 'Access Control',
+      items: [
+        { view: 'roles', label: 'Roles & Permissions', icon: ShieldCheck, desc: 'Custom roles and access' },
+      ],
+    },
   ],
   manager: [
     {
@@ -49,9 +56,10 @@ export const NAV_BY_ROLE: Record<UserRole, NavSection[]> = {
     {
       heading: 'Manage',
       items: [
-        { view: 'devices',      label: 'Devices',      icon: Cpu,      desc: 'Your org hardware' },
-        { view: 'team',         label: 'Team',         icon: UserPlus, desc: 'Members & access' },
-        { view: 'org-settings', label: 'Organization', icon: Settings, desc: 'Org details' },
+        { view: 'devices',      label: 'Devices',      icon: Cpu,        desc: 'Your org hardware' },
+        { view: 'alarm-rules',  label: 'Alarm Rules',  icon: Bell,       desc: 'Threshold alert rules' },
+        { view: 'team',         label: 'Team',         icon: UserPlus,   desc: 'Members & access' },
+        { view: 'org-settings', label: 'Organization', icon: Settings,   desc: 'Org details' },
       ],
     },
   ],

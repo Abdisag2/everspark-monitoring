@@ -14,8 +14,10 @@ import { OrganizationManagement } from '@/components/admin/OrganizationManagemen
 import { DeviceConfiguration } from '@/components/admin/DeviceConfiguration';
 import { MemberDirectory } from '@/components/admin/MemberDirectory';
 import { SimulationEngine } from '@/components/admin/SimulationEngine';
+import { RoleManager } from '@/components/admin/RoleManager';
 import { ManagerDashboard } from '@/components/manager/ManagerDashboard';
 import { OrgSettings } from '@/components/manager/OrgSettings';
+import { AlarmRules } from '@/components/manager/AlarmRules';
 import { DeviceList } from '@/components/viewer/DeviceList';
 import { DeviceDetail } from '@/components/viewer/DeviceDetail';
 
@@ -49,8 +51,10 @@ export default function DashboardPage() {
         return <DeviceConfiguration scopeOrgId={currentUser.role === 'admin' ? undefined : currentUser.organization_id ?? undefined} />;
       case 'members':           return <MemberDirectory />;
       case 'simulation':        return <SimulationEngine />;
+      case 'roles':             return <RoleManager />;
       case 'manager-dashboard': return <ManagerDashboard />;
       case 'org-settings':      return <OrgSettings />;
+      case 'alarm-rules':       return <AlarmRules />;
       case 'team':
         return <MemberDirectory scopeOrgId={currentUser.organization_id ?? undefined} allowAdminRole={false} title="Team & Access" />;
       case 'viewer-devices':    return <DeviceList />;

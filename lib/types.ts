@@ -1,6 +1,39 @@
 export type UserRole = 'admin' | 'manager' | 'viewer';
 export type DeviceStatus = 'online' | 'offline';
-export type AlarmType = 'production_complete' | 'no_naclo';
+export type AlarmType =
+  | 'production_complete'
+  | 'no_naclo'
+  | 'threshold_breach'
+  | 'device_offline'
+  | 'device_reconnected';
+
+// ---- Custom roles & permissions (S1-1) ----
+
+export type Permission =
+  | 'devices:read'
+  | 'devices:write'
+  | 'alarms:read'
+  | 'alarms:acknowledge'
+  | 'alarms:configure'
+  | 'members:read'
+  | 'members:invite'
+  | 'members:manage'
+  | 'org:read'
+  | 'org:write'
+  | 'reports:export'
+  | 'dashboard:customize';
+
+export interface Role {
+  id: string;
+  name: string;
+  org_id: string | null;
+  created_at: string;
+}
+
+export interface RolePermission {
+  role_id: string;
+  permission: Permission;
+}
 
 export interface Organization {
   id: string;
@@ -27,6 +60,26 @@ export interface Device {
   last_seen: string | null;
   location?: string;
   system_id?: string;
+  created_at: string;
+  offline_threshold_minutes?: number;
+}
+
+// ---- Threshold alarm rules (S1-2) ----
+
+export type AlarmCondition = 'lt' | 'lte' | 'gt' | 'gte' | 'eq';
+export type AlarmSeverity = 'info' | 'warning' | 'critical';
+
+export interface AlarmRule {
+  id: string;
+  org_id: string;
+  device_id: string | null;
+  parameter: string;
+  condition: AlarmCondition;
+  threshold: number;
+  severity: AlarmSeverity;
+  label: string | null;
+  is_active: boolean;
+  created_by: string | null;
   created_at: string;
 }
 
@@ -56,6 +109,11 @@ export interface AlarmRecord {
   message: string;
   timestamp: string;
   acknowledged: boolean;
+  // threshold_breach fields
+  severity?: 'info' | 'warning' | 'critical';
+  rule_id?: string;
+  parameter?: string;
+  value?: number;
 }
 
 export interface AppUser {
@@ -64,6 +122,8 @@ export interface AppUser {
   name: string;
   role: UserRole;
   organization_id: string | null;
+  custom_role_id?: string | null;
+  permissions?: Permission[];
 }
 
 /** A captured raw SIM800L POST as seen by the ingest simulator. */
@@ -84,6 +144,8 @@ export type PanelView =
   | 'devices'
   | 'members'
   | 'simulation'
+  | 'roles'
+  | 'alarm-rules'
   | 'manager-dashboard'
   | 'org-settings'
   | 'team'

@@ -3,8 +3,9 @@
 import React, { createContext, useContext, useState, useCallback, useRef, useEffect } from 'react';
 import type {
   Organization, Profile, Device, TelemetryRecord, AlarmRecord,
-  AppUser, UserRole, SimPacket, PanelState,
+  AppUser, UserRole, SimPacket, PanelState, Role, RolePermission, AlarmRule, Permission,
 } from '@/lib/types';
+import { getBasePermissions } from '@/lib/permissions';
 import {
   MOCK_ORGANIZATIONS, MOCK_PROFILES, MOCK_DEVICES, MOCK_TELEMETRY, MOCK_ALARMS,
 } from '@/lib/mock-data';
@@ -16,8 +17,9 @@ export const DEMO_PASSWORD = 'everspark';
 const SESSION_KEY = 'es_session';
 const PW_KEY = 'es_passwords';   // demo-mode per-account password overrides
 
-const profileToUser = (p: Profile): AppUser => ({
+const profileToUser = (p: Profile, extraPermissions?: Permission[]): AppUser => ({
   id: p.id, email: p.email, name: p.name, role: p.role, organization_id: p.organization_id,
+  permissions: extraPermissions ?? getBasePermissions(p.role),
 });
 
 /** Coerce a Supabase telemetry_data row (numerics may arrive as strings) into our type. */
@@ -47,10 +49,10 @@ export const DEMO_USERS: Record<UserRole, AppUser> = {
 };
 
 interface Ctx {
-  authUser: AppUser | null;        // the actually signed-in account
-  authReady: boolean;              // false until the persisted session is restored
-  currentUser: AppUser;            // active viewing identity (admins can preview other roles)
-  isPreviewing: boolean;           // true when an admin is previewing a non-self role
+  authUser: AppUser | null;
+  authReady: boolean;
+  currentUser: AppUser;
+  isPreviewing: boolean;
   login: (email: string, password: string) => Promise<{ ok: boolean; error?: string }>;
   logout: () => void;
   accountExists: (email: string) => boolean;
@@ -63,6 +65,16 @@ interface Ctx {
   alarms: AlarmRecord[];
   simPackets: SimPacket[];
   panelState: PanelState;
+  roles: Role[];
+  rolePermissions: RolePermission[];
+  alarmRules: AlarmRule[];
+  addRole: (name: string, orgId: string | null) => Role;
+  updateRole: (id: string, name: string) => void;
+  deleteRole: (id: string) => void;
+  setRolePermissions: (roleId: string, permissions: Permission[]) => void;
+  addAlarmRule: (rule: Omit<AlarmRule, 'id' | 'created_at'>) => void;
+  updateAlarmRule: (id: string, u: Partial<AlarmRule>) => void;
+  deleteAlarmRule: (id: string) => void;
 
   switchRole: (role: UserRole) => void;
   setPanel: (p: PanelState) => void;
@@ -113,6 +125,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [alarms, setAlarms] = useState<AlarmRecord[]>(isSupabaseConfigured ? [] : MOCK_ALARMS);
   const [simPackets, setSimPackets] = useState<SimPacket[]>([]);
   const [panelState, setPanelState] = useState<PanelState>({ view: 'admin-dashboard' });
+  const [roles, setRoles] = useState<Role[]>([]);
+  const [rolePermissions, setRolePerms] = useState<RolePermission[]>([]);
+  const [alarmRules, setAlarmRules] = useState<AlarmRule[]>([]);
 
   // refs so stable callbacks read fresh state without re-binding
   const devRef = useRef(devices); devRef.current = devices;
@@ -228,18 +243,24 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const refresh = useCallback(async () => {
     const supabase = getSupabase();
     if (!supabase) return;
-    const [orgsR, devsR, profsR, telR, almR] = await Promise.all([
+    const [orgsR, devsR, profsR, telR, almR, rolesR, rpR, rulesR] = await Promise.all([
       supabase.from('organizations').select('*').order('created_at', { ascending: true }),
       supabase.from('devices').select('*').order('created_at', { ascending: true }),
       supabase.from('profiles').select('*'),
       supabase.from('telemetry_data').select('*').order('timestamp', { ascending: false }).limit(500),
       supabase.from('alarms').select('*').order('timestamp', { ascending: false }).limit(200),
+      supabase.from('roles').select('*'),
+      supabase.from('role_permissions').select('*'),
+      supabase.from('alarm_rules').select('*'),
     ]);
     if (orgsR.data) setOrgs(orgsR.data as Organization[]);
     if (devsR.data) setDevices(devsR.data as Device[]);
     if (profsR.data) setProfiles(profsR.data as Profile[]);
     if (telR.data) setTelemetry((telR.data as any[]).map(normalizeTelemetry));
     if (almR.data) setAlarms(almR.data as AlarmRecord[]);
+    if (rolesR.data) setRoles(rolesR.data as Role[]);
+    if (rpR.data) setRolePerms(rpR.data as RolePermission[]);
+    if (rulesR.data) setAlarmRules(rulesR.data as AlarmRule[]);
   }, []);
   const live = isSupabaseConfigured;
   const sb = () => getSupabase()!;
@@ -351,6 +372,51 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const addSimPacket = useCallback((p: SimPacket) =>
     setSimPackets((prev) => [p, ...prev.slice(0, 49)]), []);
+
+  // ----- Roles -----
+  const addRole = useCallback((name: string, orgId: string | null): Role => {
+    const r: Role = { id: `role-${seq()}`, name, org_id: orgId, created_at: new Date().toISOString() };
+    setRoles((p) => [...p, r]);
+    if (live) sb().from('roles').insert({ name, org_id: orgId }).then(() => refresh());
+    return r;
+  }, [live, refresh]);
+  const updateRole = useCallback((id: string, name: string) => {
+    setRoles((p) => p.map((r) => (r.id === id ? { ...r, name } : r)));
+    if (live) sb().from('roles').update({ name }).eq('id', id).then(() => refresh());
+  }, [live, refresh]);
+  const deleteRole = useCallback((id: string) => {
+    setRoles((p) => p.filter((r) => r.id !== id));
+    setRolePerms((p) => p.filter((rp) => rp.role_id !== id));
+    if (live) sb().from('roles').delete().eq('id', id).then(() => refresh());
+  }, [live, refresh]);
+  const setRolePermissions = useCallback((roleId: string, permissions: Permission[]) => {
+    setRolePerms((p) => [
+      ...p.filter((rp) => rp.role_id !== roleId),
+      ...permissions.map((permission) => ({ role_id: roleId, permission })),
+    ]);
+    if (live) {
+      sb().from('role_permissions').delete().eq('role_id', roleId).then(() => {
+        if (permissions.length > 0) {
+          sb().from('role_permissions').insert(permissions.map((permission) => ({ role_id: roleId, permission }))).then(() => refresh());
+        }
+      });
+    }
+  }, [live, refresh]);
+
+  // ----- Alarm rules -----
+  const addAlarmRule = useCallback((rule: Omit<AlarmRule, 'id' | 'created_at'>) => {
+    const r: AlarmRule = { ...rule, id: `rule-${seq()}`, created_at: new Date().toISOString() };
+    setAlarmRules((p) => [...p, r]);
+    if (live) sb().from('alarm_rules').insert(rule).then(() => refresh());
+  }, [live, refresh]);
+  const updateAlarmRule = useCallback((id: string, u: Partial<AlarmRule>) => {
+    setAlarmRules((p) => p.map((r) => (r.id === id ? { ...r, ...u } : r)));
+    if (live) sb().from('alarm_rules').update(u).eq('id', id).then(() => refresh());
+  }, [live, refresh]);
+  const deleteAlarmRule = useCallback((id: string) => {
+    setAlarmRules((p) => p.filter((r) => r.id !== id));
+    if (live) sb().from('alarm_rules').delete().eq('id', id).then(() => refresh());
+  }, [live, refresh]);
   const acknowledgeAlarm = useCallback((id: string) => {
     setAlarms((p) => p.map((a) => (a.id === id ? { ...a, acknowledged: true } : a)));
     if (live) sb().from('alarms').update({ acknowledged: true }).eq('id', id).then(() => refresh());
@@ -395,11 +461,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     currentUser,
     isPreviewing: !!authUser && authUser.id !== currentUser.id,
     organizations, profiles, devices, telemetry, alarms, simPackets, panelState,
+    roles, rolePermissions, alarmRules,
     switchRole, setPanel,
     addOrg, updateOrg, deleteOrg,
     addProfile, updateProfile, deleteProfile,
     addDevice, updateDevice, deleteDevice, regenerateToken,
     ingestTelemetry, addSimPacket, acknowledgeAlarm,
+    addRole, updateRole, deleteRole, setRolePermissions,
+    addAlarmRule, updateAlarmRule, deleteAlarmRule,
     getOrgDevices, getDeviceTelemetry, getLatestTelemetry, getDeviceAlarms,
     getVisibleDevices, getVisibleOrgs, getVisibleProfiles, getUnackedAlarms,
   };
