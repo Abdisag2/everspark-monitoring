@@ -1,0 +1,16 @@
+
+> everspark-monitoring@0.1.0 dev
+> next dev
+
+  ▲ Next.js 14.2.5
+  - Local:        http://localhost:3001
+
+ ✓ Starting...
+ ✓ Ready in 4s
+ ○ Compiling / ...
+ ✓ Compiled / in 10.4s (560 modules)
+ ✓ Compiled in 1356ms (288 modules)
+ ○ Compiling /dashboard ...
+ ✓ Compiled /dashboard in 19.5s (1802 modules)
+ GET /dashboard 200 in 20704ms
+[?25h
