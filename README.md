@@ -102,6 +102,7 @@ docs/             Full documentation set (see below)
 | Doc | Contents |
 |-----|---------|
 | [docs/SPRINT_PLAN.md](./docs/SPRINT_PLAN.md) | 6-sprint product roadmap — feature backlog, DB changes, acceptance criteria |
+| [docs/TASKS.md](./docs/TASKS.md) | Individual task board with task IDs (ES-XXYY) across all 6 sprints |
 | [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) | System design, data model, RLS, frontend architecture, full directory tree, tech stack |
 | [docs/SETUP.md](./docs/SETUP.md) | Local dev, Supabase project + schema + keys, env vars, Vercel deployment, first admin user |
 | [docs/HARDWARE.md](./docs/HARDWARE.md) | Ingest VM setup, HTTP + MQTT services, device/token registration, SIM800L & USR-G771 config, troubleshooting |
