@@ -87,7 +87,7 @@ export async function POST(request: NextRequest) {
   // ---- Server-side alarm engine ----
   if (prevL1 === 1 && parsed.level_sensor_1 === 0 && parsed.level_sensor_2 === 0) {
     await supabase.from('alarms').insert({
-      device_id: device.id, alarm_type: 'production_complete',
+      device_id: device.id, alarm_type: 'production_complete', severity: 'warning',
       message: 'Chlorine production is completed. Please start a new production.', timestamp: ts,
     });
   }
@@ -100,8 +100,61 @@ export async function POST(request: NextRequest) {
       .gte('timestamp', since).limit(1);
     if (!recent || recent.length === 0) {
       await supabase.from('alarms').insert({
-        device_id: device.id, alarm_type: 'no_naclo',
+        device_id: device.id, alarm_type: 'no_naclo', severity: 'critical',
         message: 'There is no Chlorine in the Clara system. Please immediately start a new production.', timestamp: ts,
+      });
+    }
+  }
+
+  // ---- Threshold-based alarm rules (S1-2) ----
+  const { data: rules } = await supabase
+    .from('alarm_rules')
+    .select('*')
+    .eq('org_id', device.organization_id)
+    .eq('is_active', true);
+
+  if (rules && rules.length > 0) {
+    const since = new Date(Date.now() - 3600e3).toISOString();
+    for (const rule of rules) {
+      // Skip rules scoped to a different device
+      if (rule.device_id && rule.device_id !== device.id) continue;
+
+      const frameValue = (parsed as Record<string, number>)[rule.parameter];
+      if (frameValue === undefined) continue;
+
+      const threshold = Number(rule.threshold);
+      let breached = false;
+      if (rule.condition === 'lt')  breached = frameValue <  threshold;
+      if (rule.condition === 'lte') breached = frameValue <= threshold;
+      if (rule.condition === 'gt')  breached = frameValue >  threshold;
+      if (rule.condition === 'gte') breached = frameValue >= threshold;
+      if (rule.condition === 'eq')  breached = frameValue === threshold;
+
+      if (!breached) continue;
+
+      // Debounce: skip if same rule fired within the last hour and is unacknowledged
+      const { data: dupe } = await supabase
+        .from('alarms')
+        .select('id')
+        .eq('device_id', device.id)
+        .eq('alarm_type', 'threshold_breach')
+        .eq('rule_id', rule.id)
+        .eq('acknowledged', false)
+        .gte('timestamp', since)
+        .limit(1);
+
+      if (dupe && dupe.length > 0) continue;
+
+      const label = rule.label ?? `${rule.parameter} ${rule.condition} ${rule.threshold}`;
+      await supabase.from('alarms').insert({
+        device_id: device.id,
+        alarm_type: 'threshold_breach',
+        severity: rule.severity,
+        rule_id: rule.id,
+        parameter: rule.parameter,
+        value: frameValue,
+        message: `Threshold breach: ${label} (value: ${frameValue})`,
+        timestamp: ts,
       });
     }
   }

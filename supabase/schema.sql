@@ -77,6 +77,64 @@ create table if not exists public.alarms (
 );
 create index if not exists alarms_device_idx on public.alarms(device_id, timestamp desc);
 
+-- ----------------------------------------------------------------------------
+-- 6. roles  (custom role definitions — S1-1)
+-- ----------------------------------------------------------------------------
+create table if not exists public.roles (
+  id         uuid primary key default gen_random_uuid(),
+  name       text not null,
+  org_id     uuid references public.organizations(id) on delete cascade,
+  created_at timestamptz not null default now()
+);
+
+-- ----------------------------------------------------------------------------
+-- 7. role_permissions  (permission keys per role — S1-1)
+-- ----------------------------------------------------------------------------
+create table if not exists public.role_permissions (
+  role_id    uuid not null references public.roles(id) on delete cascade,
+  permission text not null,
+  primary key (role_id, permission)
+);
+
+-- Link profiles to a custom role (additive on top of base role)
+alter table public.profiles add column if not exists custom_role_id uuid references public.roles(id);
+
+-- ----------------------------------------------------------------------------
+-- 8. alarm_rules  (manager-configured threshold rules — S1-2)
+-- ----------------------------------------------------------------------------
+create table if not exists public.alarm_rules (
+  id          uuid primary key default gen_random_uuid(),
+  org_id      uuid not null references public.organizations(id) on delete cascade,
+  device_id   uuid references public.devices(id) on delete cascade,
+  parameter   text not null check (parameter in (
+    'flow_rate','voltage','ph_value','active_chlorine',
+    'naclo_pumped','target_frc','level_sensor_1','level_sensor_2','level_sensor_3'
+  )),
+  condition   text not null check (condition in ('lt','lte','gt','gte','eq')),
+  threshold   numeric not null,
+  severity    text not null default 'warning' check (severity in ('info','warning','critical')),
+  label       text,
+  is_active   boolean not null default true,
+  created_by  uuid references public.profiles(id),
+  created_at  timestamptz not null default now()
+);
+create index if not exists alarm_rules_org_idx on public.alarm_rules(org_id);
+
+-- Extend alarms table with new fields for threshold breaches
+alter table public.alarms
+  add column if not exists severity    text check (severity in ('info','warning','critical')),
+  add column if not exists rule_id     uuid references public.alarm_rules(id) on delete set null,
+  add column if not exists parameter   text,
+  add column if not exists value       numeric;
+
+-- Extend alarms to support new alarm types
+alter table public.alarms drop constraint if exists alarms_alarm_type_check;
+alter table public.alarms add constraint alarms_alarm_type_check
+  check (alarm_type in ('production_complete','no_naclo','threshold_breach','device_offline','device_reconnected'));
+
+-- Offline threshold per device (S1-3)
+alter table public.devices add column if not exists offline_threshold_minutes int not null default 15;
+
 -- ============================================================================
 -- Helper functions  (SECURITY DEFINER to avoid recursive RLS on profiles)
 -- ============================================================================
@@ -198,6 +256,25 @@ create policy alarms_member_ack on public.alarms
     )
   );
 -- Alarms are raised server-side via the service-role key (ingest), bypassing RLS.
+
+-- ---- roles (S1-1) -----------------------------------------------------------
+alter table public.roles enable row level security;
+create policy roles_admin_all   on public.roles for all using (public.is_admin()) with check (public.is_admin());
+create policy roles_member_read on public.roles for select using (org_id = public.current_org() or org_id is null);
+
+-- ---- role_permissions (S1-1) ------------------------------------------------
+alter table public.role_permissions enable row level security;
+create policy rp_admin_all   on public.role_permissions for all using (public.is_admin()) with check (public.is_admin());
+create policy rp_member_read on public.role_permissions for select
+  using (role_id in (select id from public.roles where org_id = public.current_org() or org_id is null));
+
+-- ---- alarm_rules (S1-2) -----------------------------------------------------
+alter table public.alarm_rules enable row level security;
+create policy ar_admin_all     on public.alarm_rules for all using (public.is_admin()) with check (public.is_admin());
+create policy ar_manager_all   on public.alarm_rules for all
+  using (org_id = public.current_org() and public.current_role() = 'manager')
+  with check (org_id = public.current_org() and public.current_role() = 'manager');
+create policy ar_member_select on public.alarm_rules for select using (org_id = public.current_org());
 
 -- ============================================================================
 -- Auto-create a profile row when a new auth user signs up

@@ -5,6 +5,7 @@ import { Building2, Cpu, Wifi, WifiOff, Radio, ArrowRight, CheckCheck } from 'lu
 import { useApp } from '@/context/AppContext';
 import { MetricCard } from '@/components/shared/MetricCard';
 import { StatusDot } from '@/components/shared/StatusBadge';
+import { AlarmBadge } from '@/components/shared/AlarmBadge';
 import { cn, fmtTime, timeAgo } from '@/lib/utils';
 
 export function AdminDashboard() {
@@ -115,7 +116,13 @@ export function AdminDashboard() {
               {openAlarms.map((a) => (
                 <div key={a.id} className="px-5 py-3 group">
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-xs font-semibold text-rose-600 capitalize">{a.alarm_type.replace(/_/g, ' ')}</span>
+                    <div className="flex items-center gap-2 min-w-0">
+                      <AlarmBadge severity={a.severity ?? 'warning'} />
+                      <span className="text-xs font-semibold text-slate-700 capitalize truncate">{a.alarm_type.replace(/_/g, ' ')}</span>
+                      {a.parameter && a.value !== undefined && (
+                        <span className="text-xs text-slate-400">{a.parameter}: {a.value}</span>
+                      )}
+                    </div>
                     <div className="flex items-center gap-2 shrink-0">
                       <span className="text-[11px] text-slate-400">{timeAgo(a.timestamp)}</span>
                       <button
