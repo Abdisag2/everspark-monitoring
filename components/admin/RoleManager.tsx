@@ -3,12 +3,13 @@
 import { useState } from 'react';
 import { ShieldCheck, Plus, Pencil, Trash2, Save, X, Check } from 'lucide-react';
 import { useApp } from '@/context/AppContext';
-import { ALL_PERMISSIONS } from '@/lib/permissions';
+import { ALL_PERMISSIONS, hasPermission } from '@/lib/permissions';
 import type { Role, Permission } from '@/lib/types';
 import { cn } from '@/lib/utils';
 
 export function RoleManager() {
   const { roles, rolePermissions, addRole, updateRole, deleteRole, setRolePermissions, currentUser } = useApp();
+  const canEdit = hasPermission(currentUser, 'members:manage');
 
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState('');
@@ -67,12 +68,14 @@ export function RoleManager() {
           <h2 className="text-lg font-bold text-ink">Roles &amp; Permissions</h2>
           <p className="text-sm text-slate-500">Create custom roles and assign fine-grained permissions</p>
         </div>
-        <button
-          onClick={() => { setCreating(true); setSelectedRole(null); }}
-          className="btn-primary flex items-center gap-2 text-sm"
-        >
-          <Plus size={15} /> New Role
-        </button>
+        {canEdit && (
+          <button
+            onClick={() => { setCreating(true); setSelectedRole(null); }}
+            className="btn-primary flex items-center gap-2 text-sm"
+          >
+            <Plus size={15} /> New Role
+          </button>
+        )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -130,19 +133,21 @@ export function RoleManager() {
                     </span>
                   </div>
                 )}
-                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-                  {editingId === role.id ? (
-                    <button onClick={(e) => { e.stopPropagation(); saveEdit(role.id); }} className="p-1 text-brand-600 hover:text-brand-700"><Check size={13} /></button>
-                  ) : (
-                    <button onClick={(e) => { e.stopPropagation(); startEdit(role); }} className="p-1 text-slate-400 hover:text-slate-600"><Pencil size={13} /></button>
-                  )}
-                  <button
-                    onClick={(e) => { e.stopPropagation(); deleteRole(role.id); if (selectedRole?.id === role.id) setSelectedRole(null); }}
-                    className="p-1 text-slate-400 hover:text-rose-600"
-                  >
-                    <Trash2 size={13} />
-                  </button>
-                </div>
+                {canEdit && (
+                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                    {editingId === role.id ? (
+                      <button onClick={(e) => { e.stopPropagation(); saveEdit(role.id); }} className="p-1 text-brand-600 hover:text-brand-700"><Check size={13} /></button>
+                    ) : (
+                      <button onClick={(e) => { e.stopPropagation(); startEdit(role); }} className="p-1 text-slate-400 hover:text-slate-600"><Pencil size={13} /></button>
+                    )}
+                    <button
+                      onClick={(e) => { e.stopPropagation(); deleteRole(role.id); if (selectedRole?.id === role.id) setSelectedRole(null); }}
+                      className="p-1 text-slate-400 hover:text-rose-600"
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -162,7 +167,7 @@ export function RoleManager() {
                   <h3 className="text-sm font-bold text-ink">{selectedRole.name}</h3>
                   <p className="text-xs text-slate-400">{pendingPerms.size} of {ALL_PERMISSIONS.length} permissions enabled</p>
                 </div>
-                {permsDirty && (
+                {permsDirty && canEdit && (
                   <button onClick={savePerms} className="btn-primary flex items-center gap-1.5 text-xs">
                     <Save size={13} /> Save
                   </button>
@@ -183,8 +188,9 @@ export function RoleManager() {
                     <input
                       type="checkbox"
                       checked={pendingPerms.has(key)}
-                      onChange={() => togglePerm(key)}
-                      className="mt-0.5 accent-brand-600 h-4 w-4 shrink-0"
+                      onChange={() => canEdit && togglePerm(key)}
+                      disabled={!canEdit}
+                      className="mt-0.5 accent-brand-600 h-4 w-4 shrink-0 disabled:opacity-50"
                     />
                     <div className="min-w-0">
                       <p className="text-sm font-medium text-ink">{label}</p>

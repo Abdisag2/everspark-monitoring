@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { Bell, Plus, Trash2, ToggleLeft, ToggleRight, Pencil, X, Save } from 'lucide-react';
 import { useApp } from '@/context/AppContext';
+import { hasPermission } from '@/lib/permissions';
 import { AlarmBadge } from '@/components/shared/AlarmBadge';
 import type { AlarmRule, AlarmCondition, AlarmSeverity } from '@/lib/types';
 import { cn } from '@/lib/utils';
@@ -39,8 +40,12 @@ const EMPTY_FORM: RuleForm = {
 export function AlarmRules() {
   const { alarmRules, addAlarmRule, updateAlarmRule, deleteAlarmRule, currentUser, getVisibleDevices } = useApp();
   const devices = getVisibleDevices();
+  const canEdit = hasPermission(currentUser, 'alarms:configure');
 
-  const orgRules = alarmRules.filter((r) => r.org_id === currentUser.organization_id);
+  // Admins see all rules; others see only their org's rules
+  const orgRules = currentUser.role === 'admin'
+    ? alarmRules
+    : alarmRules.filter((r) => r.org_id === currentUser.organization_id);
 
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -99,9 +104,11 @@ export function AlarmRules() {
           <h2 className="text-lg font-bold text-ink">Alarm Rules</h2>
           <p className="text-sm text-slate-500">Define threshold-based alerts for your devices</p>
         </div>
-        <button onClick={openCreate} className="btn-primary flex items-center gap-2 text-sm">
-          <Plus size={15} /> New Rule
-        </button>
+        {canEdit && (
+          <button onClick={openCreate} className="btn-primary flex items-center gap-2 text-sm">
+            <Plus size={15} /> New Rule
+          </button>
+        )}
       </div>
 
       {/* Rule form */}
@@ -229,15 +236,19 @@ export function AlarmRules() {
                     </p>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
-                    <button
-                      onClick={() => updateAlarmRule(rule.id, { is_active: !rule.is_active })}
-                      className="text-slate-400 hover:text-brand-600 transition-colors"
-                      title={rule.is_active ? 'Disable rule' : 'Enable rule'}
-                    >
-                      {rule.is_active ? <ToggleRight size={20} className="text-brand-500" /> : <ToggleLeft size={20} />}
-                    </button>
-                    <button onClick={() => openEdit(rule)} className="p-1.5 text-slate-400 hover:text-brand-600 transition-colors"><Pencil size={14} /></button>
-                    <button onClick={() => deleteAlarmRule(rule.id)} className="p-1.5 text-slate-400 hover:text-rose-600 transition-colors"><Trash2 size={14} /></button>
+                    {canEdit && (
+                      <>
+                        <button
+                          onClick={() => updateAlarmRule(rule.id, { is_active: !rule.is_active })}
+                          className="text-slate-400 hover:text-brand-600 transition-colors"
+                          title={rule.is_active ? 'Disable rule' : 'Enable rule'}
+                        >
+                          {rule.is_active ? <ToggleRight size={20} className="text-brand-500" /> : <ToggleLeft size={20} />}
+                        </button>
+                        <button onClick={() => openEdit(rule)} className="p-1.5 text-slate-400 hover:text-brand-600 transition-colors"><Pencil size={14} /></button>
+                        <button onClick={() => deleteAlarmRule(rule.id)} className="p-1.5 text-slate-400 hover:text-rose-600 transition-colors"><Trash2 size={14} /></button>
+                      </>
+                    )}
                   </div>
                 </div>
               );
