@@ -31,12 +31,40 @@ export function DeviceDetail({ deviceId, backView }: { deviceId: string; backVie
   }, [all, range]);
 
   const stats = useMemo(() => {
-    const flowTotalL = inRange.reduce((s, t) => s + t.flow_rate * 15, 0); // L/min over 15-min frames
-    const nacloL = inRange.reduce((s, t) => s + t.naclo_pumped, 0);
+    // Frames oldest → newest for time-weighted integration.
+    const asc = [...inRange].sort(
+      (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
+    );
+
+    // --- Water Flow Total ---
+    // flow_rate is L/min, so volume = ∫ flow dt. Integrate trapezoidally over the
+    // actual time between frames (handles any reporting cadence), then L → m³.
+    // Gaps (device offline) are capped at 3× the median interval so they don't
+    // inflate the total with phantom flow.
+    let flowLitres = 0;
+    if (asc.length > 1) {
+      const deltas: number[] = [];
+      for (let i = 1; i < asc.length; i++) {
+        deltas.push(new Date(asc[i].timestamp).getTime() - new Date(asc[i - 1].timestamp).getTime());
+      }
+      const med = [...deltas].sort((a, b) => a - b)[Math.floor(deltas.length / 2)] || 60000;
+      const cap = Math.max(med * 3, 60000);
+      for (let i = 1; i < asc.length; i++) {
+        const dtMin = Math.min(deltas[i - 1], cap) / 60000;
+        const avgFlow = (asc[i - 1].flow_rate + asc[i].flow_rate) / 2; // L/min
+        flowLitres += avgFlow * dtMin;
+      }
+    }
+
+    // --- NaClO Consumed ---
+    // naclo_pumped is the amount dosed per frame, sent in millilitres → sum, then mL → L.
+    const nacloMl = inRange.reduce((s, t) => s + t.naclo_pumped, 0);
+
     return {
-      flowTotalM3: flowTotalL / 1000,
-      nacloL,
-      naClOAvailable: latest ? latest.level_sensor_3 !== 1 : true,
+      flowTotalM3: flowLitres / 1000,
+      nacloL: nacloMl / 1000,
+      // 5th parameter (level_sensor_3): 1 = NaClO available, 0 = not available.
+      naClOAvailable: latest ? latest.level_sensor_3 === 1 : false,
       targetFrc: latest?.target_frc ?? 0,
       activeCl: latest?.active_chlorine ?? 0,
       ph: latest?.ph_value ?? 0,
@@ -90,7 +118,7 @@ export function DeviceDetail({ deviceId, backView }: { deviceId: string; backVie
       <div className="grid grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-4">
         <MetricCard label="Last Connection" value={timeAgo(device.last_seen)} icon={Clock} accent="accent" hint={`${inRange.length} frames`} />
         <MetricCard label="Water Flow Total" value={stats.flowTotalM3.toFixed(2)} unit="m³" icon={Droplets} accent="brand" hint={`in ${rangeShort(range)}`} />
-        <MetricCard label="NaClO Consumed" value={stats.nacloL.toFixed(1)} unit="L" icon={FlaskConical} accent="violet" hint={`in ${rangeShort(range)}`} />
+        <MetricCard label="NaClO Consumed" value={stats.nacloL.toFixed(2)} unit="L" icon={FlaskConical} accent="violet" hint={`in ${rangeShort(range)}`} />
         <div className="card p-5">
           <div className="flex items-start justify-between">
             <span className="text-[13px] font-medium text-slate-500">NaClO Available</span>

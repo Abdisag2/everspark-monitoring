@@ -41,8 +41,8 @@ export interface TelemetryRecord {
   voltage: number;          // P2  V
   level_sensor_1: 0 | 1;    // P3  1=full/in-production, 0=empty/standby
   level_sensor_2: 0 | 1;    // P4
-  level_sensor_3: 0 | 1;    // P5  1=NaClO depleted (alarm)
-  naclo_pumped: number;     // P6  L
+  level_sensor_3: 0 | 1;    // P5  1=NaClO available, 0=not available
+  naclo_pumped: number;     // P6  mL dosed per frame
   target_frc: number;       // P7  mg/L
   active_chlorine: number;  // P8  mg/L
   ph_value: number;         // P9  unitless
