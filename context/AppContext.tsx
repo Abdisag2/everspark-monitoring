@@ -87,6 +87,7 @@ interface Ctx {
   // RLS-style scoped selectors
   getOrgDevices: (orgId: string) => Device[];
   getDeviceTelemetry: (deviceId: string, limit?: number) => TelemetryRecord[];
+  getDeviceHistory: (deviceId: string, startMs: number) => Promise<TelemetryRecord[]>;
   getLatestTelemetry: (deviceId: string) => TelemetryRecord | null;
   getDeviceAlarms: (deviceId: string) => AlarmRecord[];
   getVisibleDevices: () => Device[];
@@ -361,6 +362,24 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     devRef.current.filter((d) => d.organization_id === orgId), []);
   const getDeviceTelemetry = useCallback((id: string, limit = 300) =>
     telRef.current.filter((t) => t.device_id === id).slice(0, limit), []);
+
+  // Fetch a device's full history for a time window. In live mode this queries
+  // Supabase directly (so long ranges pull real history beyond the in-memory
+  // poll buffer); in demo mode it filters the mock set.
+  const getDeviceHistory = useCallback(async (id: string, startMs: number): Promise<TelemetryRecord[]> => {
+    const supabase = getSupabase();
+    if (live && supabase) {
+      const { data } = await supabase
+        .from('telemetry_data')
+        .select('*')
+        .eq('device_id', id)
+        .gte('timestamp', new Date(startMs).toISOString())
+        .order('timestamp', { ascending: false })
+        .limit(5000);
+      return (data ?? []).map(normalizeTelemetry);
+    }
+    return telRef.current.filter((t) => t.device_id === id && new Date(t.timestamp).getTime() >= startMs);
+  }, [live]);
   const getLatestTelemetry = useCallback((id: string) =>
     telRef.current.find((t) => t.device_id === id) ?? null, []);
   const getDeviceAlarms = useCallback((id: string) =>
@@ -400,7 +419,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     addProfile, updateProfile, deleteProfile,
     addDevice, updateDevice, deleteDevice, regenerateToken,
     ingestTelemetry, addSimPacket, acknowledgeAlarm,
-    getOrgDevices, getDeviceTelemetry, getLatestTelemetry, getDeviceAlarms,
+    getOrgDevices, getDeviceTelemetry, getDeviceHistory, getLatestTelemetry, getDeviceAlarms,
     getVisibleDevices, getVisibleOrgs, getVisibleProfiles, getUnackedAlarms,
   };
 

@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   ArrowLeft, Clock, Droplets, FlaskConical, Gauge, Activity, Download, ChevronDown,
   MapPin, Cpu, CircleSlash, CheckCircle2,
@@ -14,16 +14,40 @@ import {
 import { timeAgo, fmtDateTime, cn } from '@/lib/utils';
 import { rangeStartMs, rangeShort } from '@/lib/timeRanges';
 import { TimeRangePicker } from '@/components/shared/TimeRangePicker';
-import type { PanelView } from '@/lib/types';
+import type { PanelView, TelemetryRecord } from '@/lib/types';
 
 export function DeviceDetail({ deviceId, backView }: { deviceId: string; backView?: PanelView }) {
-  const { devices, getDeviceTelemetry, getLatestTelemetry, organizations, setPanel } = useApp();
+  const { devices, telemetry, getDeviceHistory, organizations, setPanel } = useApp();
   const [range, setRange] = useState<string>('24h');
   const [showRaw, setShowRaw] = useState(false);
+  const [history, setHistory] = useState<TelemetryRecord[]>([]);
+  const [loading, setLoading] = useState(false);
 
   const device = devices.find((d) => d.id === deviceId);
-  const all = getDeviceTelemetry(deviceId, 5000);
-  const latest = getLatestTelemetry(deviceId);
+
+  // Fetch this device's history for the selected range (live → Supabase, demo → mock),
+  // so the charts pull real data for long ranges instead of just the in-memory buffer.
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    getDeviceHistory(deviceId, rangeStartMs(range))
+      .then((rows) => { if (!cancelled) setHistory(rows); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [deviceId, range, getDeviceHistory]);
+
+  // Merge fetched history with the live-polled context telemetry (dedupe by id),
+  // so long-range depth + the live tail both appear.
+  const all = useMemo(() => {
+    const map = new Map<number, TelemetryRecord>();
+    for (const t of history) map.set(t.id, t);
+    for (const t of telemetry) if (t.device_id === deviceId) map.set(t.id, t);
+    return Array.from(map.values()).sort(
+      (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime(),
+    );
+  }, [history, telemetry, deviceId]);
+
+  const latest = all[0] ?? null;
 
   const inRange = useMemo(() => {
     const start = rangeStartMs(range);
@@ -109,6 +133,7 @@ export function DeviceDetail({ deviceId, backView }: { deviceId: string; backVie
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
+          {loading && <span className="text-xs text-slate-400 animate-pulse">updating…</span>}
           <TimeRangePicker value={range} onChange={setRange} />
           <button onClick={exportCsv} className="btn-outline py-2"><Download size={15} /> Export</button>
         </div>
