@@ -130,21 +130,43 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     { view: 'viewer-devices' };
 
   // ----- Auth -----
-  // Restore a persisted session on mount (localStorage is client-only).
+  // Restore a persisted session on mount so the user stays signed in across
+  // reloads. Live mode reads Supabase's own persisted session (auto-refreshing
+  // JWT); demo mode reads the local session id.
   useEffect(() => {
-    try {
-      const stored = localStorage.getItem(PW_KEY);
-      if (stored) pwOverrides.current = JSON.parse(stored);
-      const id = localStorage.getItem(SESSION_KEY);
-      const p = id ? MOCK_PROFILES.find((x) => x.id === id) : null;
-      if (p && p.is_active) {
-        const u = profileToUser(p);
-        setAuthUser(u);
-        setCurrentUser(u);
-        setPanelState(landingPanel(u.role));
+    let cancelled = false;
+    (async () => {
+      try {
+        const stored = localStorage.getItem(PW_KEY);
+        if (stored) pwOverrides.current = JSON.parse(stored);
+      } catch { /* ignore */ }
+
+      if (isSupabaseConfigured) {
+        try {
+          const supabase = getSupabase()!;
+          const { data: { session } } = await supabase.auth.getSession();
+          if (session?.user && !cancelled) {
+            const { data: prof } = await supabase.from('profiles').select('*').eq('id', session.user.id).single();
+            if (prof && !cancelled) {
+              const u = profileToUser(prof as Profile);
+              setAuthUser(u); setCurrentUser(u); setPanelState(landingPanel(u.role));
+            }
+          }
+        } catch { /* ignore */ }
+      } else {
+        try {
+          const id = localStorage.getItem(SESSION_KEY);
+          const p = id ? MOCK_PROFILES.find((x) => x.id === id) : null;
+          if (p && p.is_active && !cancelled) {
+            const u = profileToUser(p);
+            setAuthUser(u); setCurrentUser(u); setPanelState(landingPanel(u.role));
+          }
+        } catch { /* ignore */ }
       }
-    } catch { /* ignore */ }
-    setAuthReady(true);
+
+      if (!cancelled) setAuthReady(true);
+    })();
+    return () => { cancelled = true; };
   }, []);
 
   const login = useCallback(async (email: string, password: string) => {
