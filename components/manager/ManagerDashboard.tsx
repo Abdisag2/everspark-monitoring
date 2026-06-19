@@ -4,6 +4,7 @@ import { useMemo } from 'react';
 import { Cpu, Wifi, WifiOff, Users, Radio, ArrowRight } from 'lucide-react';
 import { useApp } from '@/context/AppContext';
 import { MetricCard } from '@/components/shared/MetricCard';
+import { SitesMap } from '@/components/shared/SitesMap';
 import { DeviceList } from '@/components/viewer/DeviceList';
 import { fmtTime } from '@/lib/utils';
 
@@ -25,6 +26,8 @@ export function ManagerDashboard() {
         <MetricCard label="Offline" value={devices.length - online} icon={WifiOff} accent="rose" hint="no recent data" />
         <MetricCard label="Team Members" value={members.length} icon={Users} accent="violet" hint="with access" />
       </div>
+
+      <SitesMap />
 
       {/* Scoped telemetry stream */}
       <div className="card overflow-hidden">

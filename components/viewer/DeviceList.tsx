@@ -7,6 +7,7 @@ import { useApp } from '@/context/AppContext';
 import { MetricCard } from '@/components/shared/MetricCard';
 import { StatusBadge } from '@/components/shared/StatusBadge';
 import { LiveHardwareFeed } from '@/components/shared/LiveHardwareFeed';
+import { SitesMap } from '@/components/shared/SitesMap';
 import { timeAgo, cn } from '@/lib/utils';
 import type { PanelView } from '@/lib/types';
 
@@ -69,6 +70,8 @@ export function DeviceList({ backView = 'viewer-devices', compact = false }: { b
           </div>
         </>
       )}
+
+      {!compact && <SitesMap />}
 
       {/* Device cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">

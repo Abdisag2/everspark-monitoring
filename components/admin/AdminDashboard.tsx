@@ -4,6 +4,7 @@ import { useMemo } from 'react';
 import { Building2, Cpu, Wifi, WifiOff, Radio, ArrowRight, CheckCheck } from 'lucide-react';
 import { useApp } from '@/context/AppContext';
 import { MetricCard } from '@/components/shared/MetricCard';
+import { SitesMap } from '@/components/shared/SitesMap';
 import { StatusDot } from '@/components/shared/StatusBadge';
 import { cn, fmtTime, timeAgo } from '@/lib/utils';
 
@@ -32,6 +33,8 @@ export function AdminDashboard() {
         <MetricCard label="Online Now" value={online} icon={Wifi} accent="emerald" delta={{ value: `${Math.round((online / Math.max(devices.length, 1)) * 100)}%`, positive: true }} hint="reporting" />
         <MetricCard label="Offline" value={offline} icon={WifiOff} accent="rose" hint="no recent data" />
       </div>
+
+      <SitesMap />
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
         {/* Live global telemetry ledger */}

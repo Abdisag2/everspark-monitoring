@@ -9,7 +9,7 @@ import { Modal } from '@/components/shared/Modal';
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import { StatusBadge } from '@/components/shared/StatusBadge';
 import { CopyButton } from '@/components/shared/CopyButton';
-import { buildDataString, timeAgo, cn } from '@/lib/utils';
+import { buildDataString, timeAgo, cn, parseLatLng } from '@/lib/utils';
 import type { Device } from '@/lib/types';
 
 const SAMPLE_FRAME = buildDataString({
@@ -42,14 +42,26 @@ export function DeviceConfiguration({ scopeOrgId }: { scopeOrgId?: string }) {
   }, [devices, query, scopeOrgId]);
 
   const openCreate = () => { setForm({ ...EMPTY, organization_id: scopeOrgId ?? orgOptions[0]?.id ?? '' }); setCreating(true); };
-  const openEdit = (d: Device) => { setForm({ name: d.name, organization_id: d.organization_id, location: d.location ?? '', system_id: d.system_id ?? '' }); setEditing(d); };
+  const openEdit = (d: Device) => {
+    const loc = d.latitude != null && d.longitude != null ? `${d.latitude}, ${d.longitude}` : (d.location ?? '');
+    setForm({ name: d.name, organization_id: d.organization_id, location: loc, system_id: d.system_id ?? '' });
+    setEditing(d);
+  };
   const tokenDevice = tokenFor ? devices.find((d) => d.id === tokenFor.id) ?? tokenFor : null;
+  const locCoords = parseLatLng(form.location);
 
   const save = () => {
     if (!form.name.trim() || !form.organization_id) return;
-    if (editing) updateDevice(editing.id, { name: form.name.trim(), organization_id: form.organization_id, location: form.location.trim(), system_id: form.system_id.trim() });
-    else {
-      const created = addDevice({ name: form.name.trim(), organization_id: form.organization_id, location: form.location.trim() || undefined, system_id: form.system_id.trim() || undefined });
+    const coords = parseLatLng(form.location);
+    const common = {
+      location: form.location.trim() || undefined,
+      latitude: coords?.lat ?? null,
+      longitude: coords?.lng ?? null,
+    };
+    if (editing) {
+      updateDevice(editing.id, { name: form.name.trim(), organization_id: form.organization_id, system_id: form.system_id.trim(), ...common });
+    } else {
+      const created = addDevice({ name: form.name.trim(), organization_id: form.organization_id, system_id: form.system_id.trim() || undefined, ...common });
       setTokenFor(created); setReveal(true);
     }
     setEditing(null); setCreating(false);
@@ -155,8 +167,17 @@ export function DeviceConfiguration({ scopeOrgId }: { scopeOrgId?: string }) {
             <input value={form.system_id} onChange={(e) => setForm({ ...form, system_id: e.target.value })} placeholder="m350349272" className="input mt-1.5 font-mono" />
           </label>
           <label className="block sm:col-span-2">
-            <span className="text-sm font-medium text-slate-700">Location <span className="text-slate-400 font-normal">(optional)</span></span>
-            <input value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} placeholder="Korata, Amhara" className="input mt-1.5" />
+            <span className="text-sm font-medium text-slate-700">Location <span className="text-slate-400 font-normal">— Google Maps link or GPS coordinates</span></span>
+            <input value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} placeholder="9.0300, 38.7400  or  https://maps.google.com/?q=9.03,38.74" className="input mt-1.5" />
+            {form.location.trim() && (
+              locCoords ? (
+                <p className="mt-1.5 text-xs text-emerald-600 inline-flex items-center gap-1">
+                  <MapPin size={12} /> Pinned at {locCoords.lat.toFixed(5)}, {locCoords.lng.toFixed(5)} — shows on the Sites Map
+                </p>
+              ) : (
+                <p className="mt-1.5 text-xs text-slate-400">No coordinates detected — paste a Maps link with <code className="font-mono">@lat,lng</code> / <code className="font-mono">?q=lat,lng</code>, or type <code className="font-mono">lat, lng</code>. (Shortened goo.gl links won't work.)</p>
+              )
+            )}
           </label>
         </div>
       </Modal>

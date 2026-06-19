@@ -283,7 +283,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, [live, refresh]);
 
   // ----- Devices -----
-  const addDevice = useCallback((data: { name: string; organization_id: string; location?: string; system_id?: string }) => {
+  const addDevice = useCallback((data: { name: string; organization_id: string; location?: string; latitude?: number | null; longitude?: number | null; system_id?: string }) => {
     const token = generateToken();
     const d: Device = {
       id: `dev-${seq()}`, ...data, secret_token: token,
@@ -292,7 +292,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setDevices((p) => [...p, d]);
     if (live) sb().from('devices').insert({
       name: d.name, organization_id: d.organization_id, secret_token: token,
-      status: 'offline', location: d.location ?? null, system_id: d.system_id ?? null,
+      status: 'offline', location: d.location ?? null,
+      latitude: d.latitude ?? null, longitude: d.longitude ?? null,
+      system_id: d.system_id ?? null,
     }).then(() => refresh());
     return d;
   }, [live, refresh]);

@@ -26,6 +26,8 @@ export interface Device {
   status: DeviceStatus;
   last_seen: string | null;
   location?: string;
+  latitude?: number | null;
+  longitude?: number | null;
   system_id?: string;
   created_at: string;
 }

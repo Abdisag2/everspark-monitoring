@@ -39,6 +39,8 @@ create table if not exists public.devices (
   status          text not null default 'offline' check (status in ('online','offline')),
   last_seen       timestamptz,
   location        text,
+  latitude        double precision,
+  longitude       double precision,
   system_id       text,
   created_at      timestamptz not null default now()
 );

@@ -95,6 +95,40 @@ export function initials(name: string): string {
   return name.split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]?.toUpperCase()).join('');
 }
 
+/**
+ * Extract { lat, lng } from raw GPS coords or a Google Maps URL.
+ * Handles: "9.03, 38.74", ".../@9.03,38.74,15z", "?q=9.03,38.74",
+ * "!3d9.03!4d38.74", and a generic "lat,lng" anywhere in the string.
+ * (Shortened maps.app.goo.gl links can't be resolved client-side → null.)
+ */
+export function parseLatLng(input: string | null | undefined): { lat: number; lng: number } | null {
+  if (!input) return null;
+  const s = String(input).trim();
+  const ok = (a: string, b: string) => {
+    const lat = parseFloat(a), lng = parseFloat(b);
+    if (Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180) {
+      return { lat, lng };
+    }
+    return null;
+  };
+  const patterns: RegExp[] = [
+    /^(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)$/,                          // "lat,lng"
+    /@(-?\d+\.\d+),(-?\d+\.\d+)/,                                          // /@lat,lng
+    /!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/,                                      // place data
+    /[?&](?:q|query|ll|sll|destination|center)=(-?\d+\.\d+),(-?\d+\.\d+)/, // url params
+    /(-?\d{1,3}\.\d+)\s*,\s*(-?\d{1,3}\.\d+)/,                             // generic fallback
+  ];
+  for (const re of patterns) {
+    const m = s.match(re);
+    if (m) { const r = ok(m[1], m[2]); if (r) return r; }
+  }
+  return null;
+}
+
+export function googleMapsUrl(lat: number, lng: number): string {
+  return `https://www.google.com/maps?q=${lat},${lng}`;
+}
+
 /** Stable-ish color for an avatar/badge from a string seed. */
 export function seedColor(seed: string): string {
   const palette = ['#0d8e87', '#0284c7', '#7c3aed', '#db2777', '#d97706', '#059669', '#4f46e5'];

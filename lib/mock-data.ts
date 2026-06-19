@@ -22,15 +22,15 @@ export const MOCK_PROFILES: Profile[] = [
   { id: 'user-007', organization_id: 'org-003', email: 'r.ahmed@ddwu.gov.et',        name: 'Rahel Ahmed',          role: 'manager', is_active: true, created_at: iso(now - 90 * 86400e3) },
 ];
 
-interface DeviceSeed { id: string; org: string; name: string; location: string; system_id: string; online: boolean; }
+interface DeviceSeed { id: string; org: string; name: string; location: string; lat: number; lng: number; system_id: string; online: boolean; }
 
 const DEVICE_SEEDS: DeviceSeed[] = [
-  { id: 'dev-001', org: 'org-001', name: 'Clara-MWA "Korata" (CI-4824-01)',      location: 'Korata, Amhara',      system_id: 'm350349272', online: true },
-  { id: 'dev-002', org: 'org-001', name: 'Clara-MWA "Wonchit" (CI-4824-02)',     location: 'Wonchit, Amhara',     system_id: 'm350314171', online: true },
-  { id: 'dev-003', org: 'org-001', name: 'Clara-MWA "Ambomesk" (CI-4824-03)',    location: 'Ambomesk, Amhara',    system_id: 'm350314205', online: false },
-  { id: 'dev-004', org: 'org-002', name: 'Clara-Heks "Locheber" (CI-1223-01)',   location: 'Omo River, Oromia',   system_id: 'm350450045', online: true },
-  { id: 'dev-005', org: 'org-002', name: 'Clara-Heks "Borkonech" (CI-1223-02)',  location: 'Omo River, Oromia',   system_id: 'm350450030', online: true },
-  { id: 'dev-006', org: 'org-003', name: 'Clara-DD "Sabian" (CI-7790-01)',       location: 'Sabian, Dire Dawa',   system_id: 'm350450101', online: false },
+  { id: 'dev-001', org: 'org-001', name: 'Clara-MWA "Korata" (CI-4824-01)',      location: 'Korata, Amhara',    lat: 11.92, lng: 37.30, system_id: 'm350349272', online: true },
+  { id: 'dev-002', org: 'org-001', name: 'Clara-MWA "Wonchit" (CI-4824-02)',     location: 'Wonchit, Amhara',   lat: 10.60, lng: 38.50, system_id: 'm350314171', online: true },
+  { id: 'dev-003', org: 'org-001', name: 'Clara-MWA "Ambomesk" (CI-4824-03)',    location: 'Ambomesk, Amhara',  lat: 11.10, lng: 38.00, system_id: 'm350314205', online: false },
+  { id: 'dev-004', org: 'org-002', name: 'Clara-Heks "Locheber" (CI-1223-01)',   location: 'Omo River, Oromia', lat: 5.50,  lng: 36.10, system_id: 'm350450045', online: true },
+  { id: 'dev-005', org: 'org-002', name: 'Clara-Heks "Borkonech" (CI-1223-02)',  location: 'Omo River, Oromia', lat: 5.62,  lng: 36.22, system_id: 'm350450030', online: true },
+  { id: 'dev-006', org: 'org-003', name: 'Clara-DD "Sabian" (CI-7790-01)',       location: 'Sabian, Dire Dawa', lat: 9.59,  lng: 41.85, system_id: 'm350450101', online: false },
 ];
 
 /** Deterministic 32-char hex token from a seed — distinct per device, hydration-safe. */
@@ -53,6 +53,8 @@ export const MOCK_DEVICES: Device[] = DEVICE_SEEDS.map((d) => ({
   status: d.online ? 'online' : 'offline',
   last_seen: d.online ? iso(now - Math.floor(Math.random() * 9) * 60e3) : iso(now - (2 + Math.floor(Math.random() * 30)) * 3600e3),
   location: d.location,
+  latitude: d.lat,
+  longitude: d.lng,
   system_id: d.system_id,
   created_at: iso(now - 200 * 86400e3),
 }));
