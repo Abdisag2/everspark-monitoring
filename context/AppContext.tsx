@@ -295,12 +295,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       status: 'offline', location: d.location ?? null,
       latitude: d.latitude ?? null, longitude: d.longitude ?? null,
       system_id: d.system_id ?? null,
-    }).then(() => refresh());
+    }).then(({ error }) => { if (error) console.error('[everspark] device create failed:', error.message); refresh(); });
     return d;
   }, [live, refresh]);
   const updateDevice = useCallback((id: string, u: Partial<Device>) => {
     setDevices((p) => p.map((d) => (d.id === id ? { ...d, ...u } : d)));
-    if (live) sb().from('devices').update(u).eq('id', id).then(() => refresh());
+    if (live) sb().from('devices').update(u).eq('id', id).then(({ error }) => { if (error) console.error('[everspark] device update failed:', error.message); refresh(); });
   }, [live, refresh]);
   const deleteDevice = useCallback((id: string) => {
     setDevices((p) => p.filter((d) => d.id !== id));
