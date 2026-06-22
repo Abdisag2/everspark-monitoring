@@ -88,6 +88,7 @@ interface Ctx {
   getOrgDevices: (orgId: string) => Device[];
   getDeviceTelemetry: (deviceId: string, limit?: number) => TelemetryRecord[];
   getDeviceHistory: (deviceId: string, startMs: number) => Promise<TelemetryRecord[]>;
+  exportDeviceTelemetry: (deviceId: string, startMs: number) => Promise<TelemetryRecord[]>;
   getLatestTelemetry: (deviceId: string) => TelemetryRecord | null;
   getDeviceAlarms: (deviceId: string) => AlarmRecord[];
   getVisibleDevices: () => Device[];
@@ -399,10 +400,37 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         .eq('device_id', id)
         .gte('timestamp', new Date(startMs).toISOString())
         .order('timestamp', { ascending: false })
-        .limit(5000);
+        .limit(20000);
       return (data ?? []).map(normalizeTelemetry);
     }
     return telRef.current.filter((t) => t.device_id === id && new Date(t.timestamp).getTime() >= startMs);
+  }, [live]);
+
+  // Full, paginated history for CSV export — fetches EVERY row in the window
+  // (PostgREST caps a single request at 1000), so nothing is missing in Excel.
+  const exportDeviceTelemetry = useCallback(async (id: string, startMs: number): Promise<TelemetryRecord[]> => {
+    const supabase = getSupabase();
+    if (!(live && supabase)) {
+      return telRef.current
+        .filter((t) => t.device_id === id && new Date(t.timestamp).getTime() >= startMs)
+        .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+    }
+    const sinceISO = new Date(startMs).toISOString();
+    const out: TelemetryRecord[] = [];
+    const PAGE = 1000;
+    for (let from = 0; from < 1_000_000; from += PAGE) {
+      const { data, error } = await supabase
+        .from('telemetry_data')
+        .select('*')
+        .eq('device_id', id)
+        .gte('timestamp', sinceISO)
+        .order('timestamp', { ascending: true })
+        .range(from, from + PAGE - 1);
+      if (error || !data || data.length === 0) break;
+      out.push(...data.map(normalizeTelemetry));
+      if (data.length < PAGE) break;
+    }
+    return out;
   }, [live]);
   const getLatestTelemetry = useCallback((id: string) =>
     telRef.current.find((t) => t.device_id === id) ?? null, []);
@@ -443,7 +471,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     addProfile, updateProfile, deleteProfile,
     addDevice, updateDevice, deleteDevice, regenerateToken,
     ingestTelemetry, addSimPacket, acknowledgeAlarm,
-    getOrgDevices, getDeviceTelemetry, getDeviceHistory, getLatestTelemetry, getDeviceAlarms,
+    getOrgDevices, getDeviceTelemetry, getDeviceHistory, exportDeviceTelemetry, getLatestTelemetry, getDeviceAlarms,
     getVisibleDevices, getVisibleOrgs, getVisibleProfiles, getUnackedAlarms,
   };
 

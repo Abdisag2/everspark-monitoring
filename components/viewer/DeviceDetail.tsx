@@ -17,11 +17,12 @@ import { TimeRangePicker } from '@/components/shared/TimeRangePicker';
 import type { PanelView, TelemetryRecord } from '@/lib/types';
 
 export function DeviceDetail({ deviceId, backView }: { deviceId: string; backView?: PanelView }) {
-  const { devices, telemetry, getDeviceHistory, organizations, setPanel } = useApp();
+  const { devices, telemetry, getDeviceHistory, exportDeviceTelemetry, organizations, setPanel } = useApp();
   const [range, setRange] = useState<string>('24h');
   const [showRaw, setShowRaw] = useState(false);
   const [history, setHistory] = useState<TelemetryRecord[]>([]);
   const [loading, setLoading] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   const device = devices.find((d) => d.id === deviceId);
 
@@ -100,14 +101,23 @@ export function DeviceDetail({ deviceId, backView }: { deviceId: string; backVie
   }
   const orgName = organizations.find((o) => o.id === device.organization_id)?.name ?? '—';
 
-  const exportCsv = () => {
-    const header = ['timestamp', 'flow_rate', 'voltage', 'level_1', 'level_2', 'level_3', 'naclo_pumped', 'target_frc', 'active_chlorine', 'ph'];
-    const lines = inRange.map((t) => [t.timestamp, t.flow_rate, t.voltage, t.level_sensor_1, t.level_sensor_2, t.level_sensor_3, t.naclo_pumped, t.target_frc, t.active_chlorine, t.ph_value].join(','));
-    const blob = new Blob([[header.join(','), ...lines].join('\n')], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = `${device.system_id ?? device.id}_${range}.csv`; a.click();
-    URL.revokeObjectURL(url);
+  const exportCsv = async () => {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      // Pull EVERY frame in the window straight from the source (paginated),
+      // so the file has no missing rows regardless of the range length.
+      const rows = await exportDeviceTelemetry(deviceId, rangeStartMs(range));
+      const header = ['timestamp', 'flow_rate', 'voltage', 'level_1', 'level_2', 'level_3', 'naclo_pumped_ml', 'target_frc', 'active_chlorine', 'ph'];
+      const lines = rows.map((t) => [t.timestamp, t.flow_rate, t.voltage, t.level_sensor_1, t.level_sensor_2, t.level_sensor_3, t.naclo_pumped, t.target_frc, t.active_chlorine, t.ph_value].join(','));
+      const blob = new Blob([[header.join(','), ...lines].join('\n')], { type: 'text/csv;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = `${device?.system_id ?? deviceId}_${range}_${rows.length}rows.csv`; a.click();
+      URL.revokeObjectURL(url);
+    } finally {
+      setExporting(false);
+    }
   };
 
   return (
@@ -135,7 +145,7 @@ export function DeviceDetail({ deviceId, backView }: { deviceId: string; backVie
         <div className="flex items-center gap-2 shrink-0">
           {loading && <span className="text-xs text-slate-400 animate-pulse">updating…</span>}
           <TimeRangePicker value={range} onChange={setRange} />
-          <button onClick={exportCsv} className="btn-outline py-2"><Download size={15} /> Export</button>
+          <button onClick={exportCsv} disabled={exporting} className="btn-outline py-2"><Download size={15} /> {exporting ? 'Exporting…' : 'Export'}</button>
         </div>
       </div>
 
