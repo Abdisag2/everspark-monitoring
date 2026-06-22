@@ -9,23 +9,46 @@ import type { TelemetryRecord } from '@/lib/types';
 const AXIS = { stroke: '#94a3b8', fontSize: 11, fontFamily: 'JetBrains Mono, monospace' };
 const GRID = '#eef2f5';
 
-/** Telemetry comes newest-first; charts want oldest→newest with an adaptive axis label. */
+/**
+ * Telemetry comes newest-first; charts want oldest→newest. We attach `ts` (epoch
+ * ms) so the X axis can be a true numeric/time scale — every point gets a unique
+ * X position. (A categorical string axis collapsed points that shared a label,
+ * which is why frames appeared to go missing.)
+ */
 function toSeries(data: TelemetryRecord[]) {
-  const sorted = [...data].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
-  const spanMs = sorted.length > 1
-    ? new Date(sorted[sorted.length - 1].timestamp).getTime() - new Date(sorted[0].timestamp).getTime()
-    : 0;
-  const longRange = spanMs > 2 * 86400e3; // > 2 days → show dates instead of clock time
-  return sorted.map((t) => {
-    const d = new Date(t.timestamp);
-    return {
+  return [...data]
+    .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
+    .map((t) => ({
       ...t,
-      t: longRange
-        ? d.toLocaleDateString([], { month: 'short', day: 'numeric' })
-        : d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-    };
-  });
+      ts: new Date(t.timestamp).getTime(),
+      t: new Date(t.timestamp).toLocaleString([], {
+        month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit',
+      }),
+    }));
 }
+
+type Series = ReturnType<typeof toSeries>;
+
+/** Adaptive tick label: clock time for short spans, dates for spans over 2 days. */
+function xFormatter(series: Series) {
+  const long = series.length > 1 && series[series.length - 1].ts - series[0].ts > 2 * 86400e3;
+  return (ms: number) =>
+    long
+      ? new Date(ms).toLocaleDateString([], { month: 'short', day: 'numeric' })
+      : new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+const timeAxis = (series: Series) => ({
+  dataKey: 'ts' as const,
+  type: 'number' as const,
+  scale: 'time' as const,
+  domain: ['dataMin', 'dataMax'] as [string, string],
+  tickFormatter: xFormatter(series),
+  tick: AXIS,
+  tickLine: false,
+  axisLine: { stroke: GRID },
+  minTickGap: 50,
+});
 
 export function ChartCard({
   title, subtitle, badge, children, height = 240,
@@ -66,19 +89,15 @@ export function FlowRateChart({ data }: { data: TelemetryRecord[] }) {
     <ResponsiveContainer width="100%" height="100%">
       <ScatterChart margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
         <CartesianGrid stroke={GRID} />
-        <XAxis dataKey="t" tick={AXIS} tickLine={false} axisLine={{ stroke: GRID }} minTickGap={40} />
+        <XAxis {...timeAxis(series)} />
         <YAxis
-          tick={AXIS}
-          tickLine={false}
-          axisLine={false}
-          width={44}
-          domain={[0, 'auto']}
-          allowDecimals
+          tick={AXIS} tickLine={false} axisLine={false} width={44}
+          domain={[0, 'auto']} allowDecimals
           tickFormatter={(v) => (Math.abs(v) >= 10 ? Number(v).toFixed(0) : Number(v).toFixed(1))}
         />
-        <ZAxis range={[26, 26]} />
+        <ZAxis range={[22, 22]} />
         <Tooltip content={<CustomTooltip unit=" L/min" />} cursor={{ stroke: '#cbd5e1', strokeDasharray: '4 4' }} />
-        <Scatter name="Flow Rate" data={series} dataKey="flow_rate" fill="#0d8e87" fillOpacity={0.75} />
+        <Scatter name="Flow Rate" data={series} dataKey="flow_rate" fill="#0d8e87" fillOpacity={0.75} isAnimationActive={false} />
       </ScatterChart>
     </ResponsiveContainer>
   );
@@ -96,7 +115,7 @@ export function ProductionStateChart({ data }: { data: TelemetryRecord[] }) {
           </linearGradient>
         </defs>
         <CartesianGrid stroke={GRID} />
-        <XAxis dataKey="t" tick={AXIS} tickLine={false} axisLine={{ stroke: GRID }} minTickGap={40} />
+        <XAxis {...timeAxis(series)} />
         <YAxis tick={false} axisLine={false} width={56} domain={[0, 1]} ticks={[0, 1]}
           tickFormatter={(v) => (v === 1 ? 'In production' : 'Stand by')} />
         <Tooltip content={({ active, payload }: any) =>
@@ -106,7 +125,8 @@ export function ProductionStateChart({ data }: { data: TelemetryRecord[] }) {
               <p className="font-semibold text-brand-600">{payload[0].value === 1 ? 'In production' : 'Stand by'}</p>
             </div>
           ) : null} />
-        <Area type="stepAfter" dataKey="level_sensor_1" name="Production" stroke="#0d8e87" strokeWidth={2} fill="url(#prodFill)" />
+        <Area type="stepAfter" dataKey="level_sensor_1" name="Production" stroke="#0d8e87" strokeWidth={2}
+          fill="url(#prodFill)" isAnimationActive={false} dot={false} />
       </AreaChart>
     </ResponsiveContainer>
   );
@@ -118,11 +138,11 @@ export function VoltageChart({ data }: { data: TelemetryRecord[] }) {
     <ResponsiveContainer width="100%" height="100%">
       <ScatterChart margin={{ top: 8, right: 8, bottom: 0, left: -16 }}>
         <CartesianGrid stroke={GRID} />
-        <XAxis dataKey="t" tick={AXIS} tickLine={false} axisLine={{ stroke: GRID }} minTickGap={40} />
+        <XAxis {...timeAxis(series)} />
         <YAxis tick={AXIS} tickLine={false} axisLine={false} unit="V" width={56} domain={['dataMin - 0.5', 'dataMax + 0.5']} />
-        <ZAxis range={[26, 26]} />
+        <ZAxis range={[22, 22]} />
         <Tooltip content={<CustomTooltip unit="V" />} cursor={{ stroke: '#cbd5e1', strokeDasharray: '4 4' }} />
-        <Scatter name="Voltage" data={series} dataKey="voltage" fill="#0284c7" fillOpacity={0.75} />
+        <Scatter name="Voltage" data={series} dataKey="voltage" fill="#0284c7" fillOpacity={0.75} isAnimationActive={false} />
       </ScatterChart>
     </ResponsiveContainer>
   );
@@ -134,13 +154,13 @@ export function ChlorinePhChart({ data }: { data: TelemetryRecord[] }) {
     <ResponsiveContainer width="100%" height="100%">
       <LineChart data={series} margin={{ top: 8, right: 8, bottom: 0, left: -16 }}>
         <CartesianGrid stroke={GRID} />
-        <XAxis dataKey="t" tick={AXIS} tickLine={false} axisLine={{ stroke: GRID }} minTickGap={40} />
+        <XAxis {...timeAxis(series)} />
         <YAxis yAxisId="cl" tick={AXIS} tickLine={false} axisLine={false} width={42} unit="" />
         <YAxis yAxisId="ph" orientation="right" tick={AXIS} tickLine={false} axisLine={false} width={32} domain={[6, 8]} />
         <Tooltip content={<CustomTooltip />} cursor={{ stroke: '#cbd5e1', strokeDasharray: '4 4' }} />
         <Legend iconType="circle" wrapperStyle={{ fontSize: 11, paddingTop: 4 }} />
-        <Line yAxisId="cl" type="monotone" dataKey="active_chlorine" name="Active Chlorine (mg/L)" stroke="#0d8e87" strokeWidth={2} dot={false} />
-        <Line yAxisId="ph" type="monotone" dataKey="ph_value" name="pH" stroke="#db2777" strokeWidth={2} dot={false} strokeDasharray="5 3" />
+        <Line yAxisId="cl" type="monotone" dataKey="active_chlorine" name="Active Chlorine (mg/L)" stroke="#0d8e87" strokeWidth={2} dot={false} isAnimationActive={false} />
+        <Line yAxisId="ph" type="monotone" dataKey="ph_value" name="pH" stroke="#db2777" strokeWidth={2} dot={false} strokeDasharray="5 3" isAnimationActive={false} />
       </LineChart>
     </ResponsiveContainer>
   );
