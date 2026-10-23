@@ -301,8 +301,29 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     if (live) sb().from('profiles').update(u).eq('id', id).then(() => refresh());
   }, [live, refresh]);
   const deleteProfile = useCallback((id: string) => {
-    setProfiles((p) => p.filter((x) => x.id !== id));
-    if (live) sb().from('profiles').delete().eq('id', id).then(() => refresh());
+    setProfiles((p) => p.filter((x) => x.id !== id)); // optimistic
+    // Live: go through the service-role route so the auth.users account is also
+    // removed (cascades the profile). A plain profiles delete would leave the
+    // auth user behind, keeping the email "registered" and blocking re-invites.
+    if (live) {
+      (async () => {
+        try {
+          const { data: { session } } = await sb().auth.getSession();
+          const res = await fetch('/api/delete-member', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token ?? ''}` },
+            body: JSON.stringify({ id }),
+          });
+          if (!res.ok) {
+            const json = await res.json().catch(() => ({}));
+            console.error('[everspark] delete member failed:', json.error ?? res.statusText);
+          }
+        } catch (err: any) {
+          console.error('[everspark] delete member error:', err?.message ?? err);
+        }
+        refresh(); // reload from DB — re-adds the row if the delete failed
+      })();
+    }
   }, [live, refresh]);
 
   // ----- Devices -----
