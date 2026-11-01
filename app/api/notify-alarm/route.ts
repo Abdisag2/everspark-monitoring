@@ -56,11 +56,18 @@ export async function POST(req: NextRequest) {
   // email in case the same address matches both conditions.
   const { data: rows } = await admin
     .from('profiles')
-    .select('email, name')
+    .select('id, email, name, alarm_email_all_devices')
     .eq('alarm_email_enabled', true)
     .eq('is_active', true)
     .or(`organization_id.eq.${device.organization_id},role.eq.admin`);
-  const recipients = dedupeByEmail(rows ?? []);
+  let emailUsers = rows ?? [];
+  // Device scope: users set to "all devices" always match; others only if they picked this device.
+  if (emailUsers.some((u: any) => u.alarm_email_all_devices === false)) {
+    const { data: picks } = await admin.from('email_alarm_devices').select('user_id').eq('device_id', alarm.device_id);
+    const picked = new Set((picks ?? []).map((p: any) => p.user_id));
+    emailUsers = emailUsers.filter((u: any) => u.alarm_email_all_devices !== false || picked.has(u.id));
+  }
+  const recipients = dedupeByEmail(emailUsers);
 
   const from = process.env.ALARM_FROM_EMAIL || 'no-reply@eversparktech.com';
   const label = ALARM_LABELS[alarm.alarm_type] ?? alarm.alarm_type;
@@ -122,14 +129,21 @@ You get this because device-alarm emails are on for your account. Turn them off 
       .eq('organization_id', device.organization_id)
       .maybeSingle();
     if (smsCfg?.enabled) {
-      const [{ data: nums }, { data: tmpl }] = await Promise.all([
-        admin.from('sms_recipients').select('phone_e164')
+      const [{ data: allNums }, { data: tmpl }] = await Promise.all([
+        admin.from('sms_recipients').select('id, phone_e164, all_devices')
           .eq('organization_id', device.organization_id).eq('enabled', true),
         admin.from('sms_templates').select('message, enabled')
           .eq('organization_id', device.organization_id).eq('alarm_type', alarm.alarm_type).maybeSingle(),
       ]);
+      let nums = allNums ?? [];
+      // Device scope: "all devices" numbers always match; others only if linked to this device.
+      if (nums.some((r: any) => r.all_devices === false)) {
+        const { data: picks } = await admin.from('sms_recipient_devices').select('recipient_id').eq('device_id', alarm.device_id);
+        const picked = new Set((picks ?? []).map((p: any) => p.recipient_id));
+        nums = nums.filter((r: any) => r.all_devices !== false || picked.has(r.id));
+      }
       const templateDisabled = tmpl != null && tmpl.enabled === false;
-      if (nums && nums.length && !templateDisabled) {
+      if (nums.length && !templateDisabled) {
         const raw = tmpl?.message || 'Ever Spark alert: {alarm} on {device} ({detail}) at {time}';
         const msg = renderTemplate(raw, { alarm: label, device: device.name, detail: alarm.message, time: when });
         const sns = new SNSClient({

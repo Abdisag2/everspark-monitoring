@@ -18,6 +18,7 @@ import { ManagerDashboard } from '@/components/manager/ManagerDashboard';
 import { OrgSettings } from '@/components/manager/OrgSettings';
 import { DeviceList } from '@/components/viewer/DeviceList';
 import { DeviceDetail } from '@/components/viewer/DeviceDetail';
+import { NotificationSettings } from '@/components/shared/NotificationSettings';
 
 export default function DashboardPage() {
   const { panelState, currentUser, authUser, authReady } = useApp();
@@ -54,6 +55,7 @@ export default function DashboardPage() {
       case 'team':
         return <MemberDirectory scopeOrgId={currentUser.organization_id ?? undefined} allowAdminRole={false} title="Team & Access" />;
       case 'viewer-devices':    return <DeviceList />;
+      case 'notifications':     return <NotificationSettings />;
       case 'device-monitoring':
         return <DeviceDetail deviceId={panelState.deviceId} backView={panelState.backView} />;
       default:                  return <AdminDashboard />;

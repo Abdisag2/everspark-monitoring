@@ -1,5 +1,5 @@
 import {
-  LayoutDashboard, Building2, Cpu, Users, Radio, Settings, UserPlus, MonitorDot,
+  LayoutDashboard, Building2, Cpu, Users, Radio, Settings, UserPlus, MonitorDot, Bell,
   type LucideIcon,
 } from 'lucide-react';
 import type { PanelView, UserRole } from './types';
@@ -38,6 +38,12 @@ export const NAV_BY_ROLE: Record<UserRole, NavSection[]> = {
         { view: 'simulation', label: 'Telemetry Simulator', icon: Radio, desc: 'Mock SIM800L posts' },
       ],
     },
+    {
+      heading: 'Account',
+      items: [
+        { view: 'notifications', label: 'Notifications', icon: Bell, desc: 'Your alarm emails' },
+      ],
+    },
   ],
   manager: [
     {
@@ -54,12 +60,24 @@ export const NAV_BY_ROLE: Record<UserRole, NavSection[]> = {
         { view: 'org-settings', label: 'Organization', icon: Settings, desc: 'Org details' },
       ],
     },
+    {
+      heading: 'Account',
+      items: [
+        { view: 'notifications', label: 'Notifications', icon: Bell, desc: 'Your alarm emails' },
+      ],
+    },
   ],
   viewer: [
     {
       heading: 'Monitoring',
       items: [
         { view: 'viewer-devices', label: 'Live Monitoring', icon: MonitorDot, desc: 'Assigned devices' },
+      ],
+    },
+    {
+      heading: 'Account',
+      items: [
+        { view: 'notifications', label: 'Notifications', icon: Bell, desc: 'Your alarm emails' },
       ],
     },
   ],

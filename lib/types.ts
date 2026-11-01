@@ -15,7 +15,8 @@ export interface Profile {
   name: string;
   role: UserRole;
   is_active: boolean;
-  alarm_email_enabled?: boolean;   // per-user: email me when my org's devices raise an alarm (default off)
+  alarm_email_enabled?: boolean;        // per-user: email me device alarms (default off)
+  alarm_email_all_devices?: boolean;    // true = all org devices; false = only the picked ones (default true)
   created_at: string;
 }
 
@@ -80,7 +81,18 @@ export interface SmsRecipient {
   phone_e164: string;
   label: string | null;
   enabled: boolean;
+  all_devices: boolean;          // true = every org device; false = only linked devices
   created_at: string;
+}
+
+export interface SmsRecipientDevice {
+  recipient_id: string;
+  device_id: string;
+}
+
+export interface EmailAlarmDevice {
+  user_id: string;
+  device_id: string;
 }
 
 export interface SmsTemplate {
@@ -122,6 +134,7 @@ export type PanelView =
   | 'org-settings'
   | 'team'
   | 'viewer-devices'
+  | 'notifications'
   | 'device-monitoring';
 
 export type PanelState =

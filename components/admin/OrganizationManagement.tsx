@@ -1,10 +1,11 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { Building2, Plus, Pencil, Trash2, Search, Cpu, Users, Calendar } from 'lucide-react';
+import { Building2, Plus, Pencil, Trash2, Search, Cpu, Users, Calendar, MessageSquare } from 'lucide-react';
 import { useApp } from '@/context/AppContext';
 import { Modal } from '@/components/shared/Modal';
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
+import { SmsManager } from '@/components/shared/SmsManager';
 import { StatusDot } from '@/components/shared/StatusBadge';
 import type { Organization } from '@/lib/types';
 
@@ -14,6 +15,7 @@ export function OrganizationManagement() {
   const [editing, setEditing] = useState<Organization | null>(null);
   const [creating, setCreating] = useState(false);
   const [deleting, setDeleting] = useState<Organization | null>(null);
+  const [managingSms, setManagingSms] = useState<Organization | null>(null);
   const [name, setName] = useState('');
 
   const rows = useMemo(() => {
@@ -75,6 +77,7 @@ export function OrganizationManagement() {
                 </div>
               </div>
               <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                <button onClick={() => setManagingSms(org)} className="btn-ghost p-1.5 rounded-lg" title="SMS alerts"><MessageSquare size={15} /></button>
                 <button onClick={() => openEdit(org)} className="btn-ghost p-1.5 rounded-lg" title="Edit"><Pencil size={15} /></button>
                 <button onClick={() => setDeleting(org)} className="btn-ghost p-1.5 rounded-lg hover:text-rose-500" title="Delete"><Trash2 size={15} /></button>
               </div>
@@ -124,6 +127,16 @@ export function OrganizationManagement() {
           <span className="text-sm font-medium text-slate-700">Organization name</span>
           <input autoFocus value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && save()} placeholder="e.g. Addis Ababa Water & Sewerage" className="input mt-1.5" />
         </label>
+      </Modal>
+
+      <Modal
+        open={!!managingSms}
+        onClose={() => setManagingSms(null)}
+        title={`SMS Alerts — ${managingSms?.name ?? ''}`}
+        description="Approve, assign operator numbers, and edit message templates for this organization."
+        size="lg"
+      >
+        {managingSms && <SmsManager org={managingSms} isAdmin />}
       </Modal>
 
       <ConfirmDialog

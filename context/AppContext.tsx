@@ -5,6 +5,7 @@ import type {
   Organization, Profile, Device, TelemetryRecord, AlarmRecord,
   AppUser, UserRole, SimPacket, PanelState,
   OrgSmsSettings, SmsRecipient, SmsTemplate, AlarmType,
+  SmsRecipientDevice, EmailAlarmDevice,
 } from '@/lib/types';
 import {
   MOCK_ORGANIZATIONS, MOCK_PROFILES, MOCK_DEVICES, MOCK_TELEMETRY, MOCK_ALARMS,
@@ -88,17 +89,23 @@ interface Ctx {
   // Per-user alarm-email preference (the actually signed-in account, not a previewed role)
   myAlarmEmailEnabled: boolean;
   setMyAlarmEmail: (on: boolean) => void;
+  myAlarmEmailAllDevices: boolean;              // true = all org devices; false = only my picked devices
+  myEmailDeviceIds: string[];                   // devices I picked when not "all devices"
+  setMyAlarmEmailAllDevices: (all: boolean) => void;
+  setMyEmailDevices: (deviceIds: string[]) => void;
 
-  // SMS alarms (Phase 2): approval workflow + operator numbers + per-alarm templates
+  // SMS alarms (Phase 2): approval workflow + operator numbers + per-alarm templates + device scope
   smsSettings: OrgSmsSettings[];
   smsRecipients: SmsRecipient[];
   smsTemplates: SmsTemplate[];
+  smsRecipientDevices: SmsRecipientDevice[];
   requestOrgSms: () => void;                                   // manager: ask Super Admin to enable SMS for their org
-  reviewOrgSms: (orgId: string, approve: boolean) => void;     // admin: approve/deny a request
-  addSmsRecipient: (phone: string, label: string) => void;     // manager: add an operator number
-  updateSmsRecipient: (id: string, patch: Partial<Pick<SmsRecipient, 'phone_e164' | 'label' | 'enabled'>>) => void;
+  reviewOrgSms: (orgId: string, approve: boolean) => void;     // admin: approve/deny (also enable/disable) an org
+  addSmsRecipient: (orgId: string, phone: string, label: string) => void;
+  updateSmsRecipient: (id: string, patch: Partial<Pick<SmsRecipient, 'phone_e164' | 'label' | 'enabled' | 'all_devices'>>) => void;
   deleteSmsRecipient: (id: string) => void;
-  upsertSmsTemplate: (alarmType: AlarmType, message: string, enabled: boolean) => void;
+  assignSmsRecipientDevices: (recipientId: string, deviceIds: string[]) => void;
+  upsertSmsTemplate: (orgId: string, alarmType: AlarmType, message: string, enabled: boolean) => void;
 
   // RLS-style scoped selectors
   getOrgDevices: (orgId: string) => Device[];
@@ -133,6 +140,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [smsSettings, setSmsSettings] = useState<OrgSmsSettings[]>([]);
   const [smsRecipients, setSmsRecipients] = useState<SmsRecipient[]>([]);
   const [smsTemplates, setSmsTemplates] = useState<SmsTemplate[]>([]);
+  const [smsRecipientDevices, setSmsRecipientDevices] = useState<SmsRecipientDevice[]>([]);
+  const [emailAlarmDevices, setEmailAlarmDevices] = useState<EmailAlarmDevice[]>([]);
   const [panelState, setPanelState] = useState<PanelState>({ view: 'admin-dashboard' });
 
   // refs so stable callbacks read fresh state without re-binding
@@ -271,7 +280,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const refresh = useCallback(async () => {
     const supabase = getSupabase();
     if (!supabase) return;
-    const [orgsR, devsR, profsR, telR, almR, smsR, rcptR, tmplR] = await Promise.all([
+    const [orgsR, devsR, profsR, telR, almR, smsR, rcptR, tmplR, srdR, eadR] = await Promise.all([
       supabase.from('organizations').select('*').order('created_at', { ascending: true }),
       supabase.from('devices').select('*').order('created_at', { ascending: true }),
       supabase.from('profiles').select('*'),
@@ -280,6 +289,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       supabase.from('org_sms_settings').select('*'),
       supabase.from('sms_recipients').select('*').order('created_at', { ascending: true }),
       supabase.from('sms_templates').select('*'),
+      supabase.from('sms_recipient_devices').select('*'),
+      supabase.from('email_alarm_devices').select('*'),
     ]);
     if (orgsR.data) setOrgs(orgsR.data as Organization[]);
     if (devsR.data) setDevices(devsR.data as Device[]);
@@ -289,6 +300,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     if (smsR.data) setSmsSettings(smsR.data as OrgSmsSettings[]);
     if (rcptR.data) setSmsRecipients(rcptR.data as SmsRecipient[]);
     if (tmplR.data) setSmsTemplates(tmplR.data as SmsTemplate[]);
+    if (srdR.data) setSmsRecipientDevices(srdR.data as SmsRecipientDevice[]);
+    if (eadR.data) setEmailAlarmDevices(eadR.data as EmailAlarmDevice[]);
   }, []);
   const live = isSupabaseConfigured;
   const sb = () => getSupabase()!;
@@ -387,32 +400,55 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     if (live) sb().rpc('review_org_sms', { target_org: orgId, approve }).then(({ error }: { error: any }) => { if (error) console.error('[everspark] SMS review failed:', error.message); refresh(); });
   }, [live, refresh]);
 
-  const addSmsRecipient = useCallback((phone: string, label: string) => {
-    const org = userRef.current.organization_id;
-    if (!org) return;
-    setSmsRecipients((p) => [...p, { id: `sms-${seq()}`, organization_id: org, phone_e164: phone, label: label || null, enabled: true, created_at: new Date().toISOString() }]);
-    if (live) sb().from('sms_recipients').insert({ organization_id: org, phone_e164: phone, label: label || null, enabled: true }).then(() => refresh());
+  // orgId is explicit so both managers (own org) and admins (any org) can manage.
+  const addSmsRecipient = useCallback((orgId: string, phone: string, label: string) => {
+    setSmsRecipients((p) => [...p, { id: `sms-${seq()}`, organization_id: orgId, phone_e164: phone, label: label || null, enabled: true, all_devices: true, created_at: new Date().toISOString() }]);
+    if (live) sb().from('sms_recipients').insert({ organization_id: orgId, phone_e164: phone, label: label || null, enabled: true, all_devices: true }).then(() => refresh());
   }, [live, refresh]);
 
-  const updateSmsRecipient = useCallback((id: string, patch: Partial<Pick<SmsRecipient, 'phone_e164' | 'label' | 'enabled'>>) => {
+  const updateSmsRecipient = useCallback((id: string, patch: Partial<Pick<SmsRecipient, 'phone_e164' | 'label' | 'enabled' | 'all_devices'>>) => {
     setSmsRecipients((p) => p.map((r) => (r.id === id ? { ...r, ...patch } : r)));
     if (live) sb().from('sms_recipients').update(patch).eq('id', id).then(() => refresh());
   }, [live, refresh]);
 
   const deleteSmsRecipient = useCallback((id: string) => {
     setSmsRecipients((p) => p.filter((r) => r.id !== id));
+    setSmsRecipientDevices((p) => p.filter((x) => x.recipient_id !== id));
     if (live) sb().from('sms_recipients').delete().eq('id', id).then(() => refresh());
   }, [live, refresh]);
 
-  const upsertSmsTemplate = useCallback((alarmType: AlarmType, message: string, enabled: boolean) => {
-    const org = userRef.current.organization_id;
-    if (!org) return;
-    setSmsTemplates((p) => {
-      const ex = p.find((t) => t.organization_id === org && t.alarm_type === alarmType);
-      if (ex) return p.map((t) => (t.id === ex.id ? { ...t, message, enabled } : t));
-      return [...p, { id: `tmpl-${seq()}`, organization_id: org, alarm_type: alarmType, message, enabled, created_at: new Date().toISOString() }];
+  // Replace the set of devices a recipient is scoped to (empty = none; use all_devices=true for all).
+  const assignSmsRecipientDevices = useCallback((recipientId: string, deviceIds: string[]) => {
+    setSmsRecipientDevices((p) => [...p.filter((x) => x.recipient_id !== recipientId), ...deviceIds.map((d) => ({ recipient_id: recipientId, device_id: d }))]);
+    if (live) sb().from('sms_recipient_devices').delete().eq('recipient_id', recipientId).then(() => {
+      if (deviceIds.length) sb().from('sms_recipient_devices').insert(deviceIds.map((d) => ({ recipient_id: recipientId, device_id: d }))).then(() => refresh());
+      else refresh();
     });
-    if (live) sb().from('sms_templates').upsert({ organization_id: org, alarm_type: alarmType, message, enabled }, { onConflict: 'organization_id,alarm_type' }).then(() => refresh());
+  }, [live, refresh]);
+
+  const upsertSmsTemplate = useCallback((orgId: string, alarmType: AlarmType, message: string, enabled: boolean) => {
+    setSmsTemplates((p) => {
+      const ex = p.find((t) => t.organization_id === orgId && t.alarm_type === alarmType);
+      if (ex) return p.map((t) => (t.id === ex.id ? { ...t, message, enabled } : t));
+      return [...p, { id: `tmpl-${seq()}`, organization_id: orgId, alarm_type: alarmType, message, enabled, created_at: new Date().toISOString() }];
+    });
+    if (live) sb().from('sms_templates').upsert({ organization_id: orgId, alarm_type: alarmType, message, enabled }, { onConflict: 'organization_id,alarm_type' }).then(() => refresh());
+  }, [live, refresh]);
+
+  // ----- My email device scope -----
+  const setMyAlarmEmailAllDevices = useCallback((all: boolean) => {
+    const myId = authUserRef.current?.id ?? userRef.current.id;
+    setProfiles((p) => p.map((x) => (x.id === myId ? { ...x, alarm_email_all_devices: all } : x)));
+    if (live) sb().rpc('set_my_alarm_email_all_devices', { all_devices: all }).then(({ error }: { error: any }) => { if (error) console.error('[everspark] email scope toggle failed:', error.message); });
+  }, [live]);
+
+  const setMyEmailDevices = useCallback((deviceIds: string[]) => {
+    const myId = authUserRef.current?.id ?? userRef.current.id;
+    setEmailAlarmDevices((p) => [...p.filter((x) => x.user_id !== myId), ...deviceIds.map((d) => ({ user_id: myId, device_id: d }))]);
+    if (live) sb().from('email_alarm_devices').delete().eq('user_id', myId).then(() => {
+      if (deviceIds.length) sb().from('email_alarm_devices').insert(deviceIds.map((d) => ({ user_id: myId, device_id: d }))).then(() => refresh());
+      else refresh();
+    });
   }, [live, refresh]);
 
   // ----- Devices -----
@@ -571,7 +607,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const myPrefId = authUser?.id ?? currentUser.id;
-  const myAlarmEmailEnabled = !!profiles.find((p) => p.id === myPrefId)?.alarm_email_enabled;
+  const myProfileForPrefs = profiles.find((p) => p.id === myPrefId);
+  const myAlarmEmailEnabled = !!myProfileForPrefs?.alarm_email_enabled;
+  const myAlarmEmailAllDevices = myProfileForPrefs?.alarm_email_all_devices ?? true;
+  const myEmailDeviceIds = emailAlarmDevices.filter((e) => e.user_id === myPrefId).map((e) => e.device_id);
 
   const value: Ctx = {
     authUser, authReady, login, logout,
@@ -585,8 +624,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     addDevice, updateDevice, deleteDevice, regenerateToken,
     ingestTelemetry, addSimPacket, acknowledgeAlarm,
     myAlarmEmailEnabled, setMyAlarmEmail,
-    smsSettings, smsRecipients, smsTemplates,
-    requestOrgSms, reviewOrgSms, addSmsRecipient, updateSmsRecipient, deleteSmsRecipient, upsertSmsTemplate,
+    myAlarmEmailAllDevices, myEmailDeviceIds, setMyAlarmEmailAllDevices, setMyEmailDevices,
+    smsSettings, smsRecipients, smsTemplates, smsRecipientDevices,
+    requestOrgSms, reviewOrgSms, addSmsRecipient, updateSmsRecipient, deleteSmsRecipient, assignSmsRecipientDevices, upsertSmsTemplate,
     getOrgDevices, getDeviceTelemetry, getDeviceHistory, exportDeviceTelemetry, getLatestTelemetry, getDeviceAlarms,
     getVisibleDevices, getVisibleOrgs, getVisibleProfiles, getUnackedAlarms,
   };
