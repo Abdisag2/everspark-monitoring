@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseAdmin } from '@/lib/supabase';
 import { SESv2Client, SendEmailCommand } from '@aws-sdk/client-sesv2';
+import { SNSClient, PublishCommand } from '@aws-sdk/client-sns';
 
 export const runtime = 'nodejs'; // AWS SDK needs the Node runtime, not Edge
 
@@ -112,10 +113,60 @@ You get this because device-alarm emails are on for your account. Turn them off 
     }
   }
 
+  // --- SMS: text each enabled operator number, if the org has SMS enabled ---
+  let sms = 0;
+  try {
+    const { data: smsCfg } = await admin
+      .from('org_sms_settings')
+      .select('enabled')
+      .eq('organization_id', device.organization_id)
+      .maybeSingle();
+    if (smsCfg?.enabled) {
+      const [{ data: nums }, { data: tmpl }] = await Promise.all([
+        admin.from('sms_recipients').select('phone_e164')
+          .eq('organization_id', device.organization_id).eq('enabled', true),
+        admin.from('sms_templates').select('message, enabled')
+          .eq('organization_id', device.organization_id).eq('alarm_type', alarm.alarm_type).maybeSingle(),
+      ]);
+      const templateDisabled = tmpl != null && tmpl.enabled === false;
+      if (nums && nums.length && !templateDisabled) {
+        const raw = tmpl?.message || 'Ever Spark alert: {alarm} on {device} ({detail}) at {time}';
+        const msg = renderTemplate(raw, { alarm: label, device: device.name, detail: alarm.message, time: when });
+        const sns = new SNSClient({
+          region: process.env.SNS_REGION || process.env.SES_REGION || 'eu-central-1',
+          credentials: {
+            accessKeyId: process.env.SES_ACCESS_KEY_ID || '',
+            secretAccessKey: process.env.SES_SECRET_ACCESS_KEY || '',
+          },
+        });
+        for (const n of nums) {
+          try {
+            await sns.send(new PublishCommand({
+              PhoneNumber: n.phone_e164,
+              Message: msg,
+              MessageAttributes: {
+                'AWS.SNS.SMS.SMSType': { DataType: 'String', StringValue: 'Transactional' },
+              },
+            }));
+            sms++;
+          } catch (e: any) {
+            console.error('[everspark] alarm SMS failed for', n.phone_e164, '-', e?.message);
+          }
+        }
+      }
+    }
+  } catch (e: any) {
+    console.error('[everspark] SMS block error:', e?.message);
+  }
+
   // Stamp as notified even if there were no recipients, so we don't re-scan it.
   await admin.from('alarms').update({ notified_at: new Date().toISOString() }).eq('id', alarmId);
 
-  return NextResponse.json({ ok: true, recipients: recipients?.length ?? 0, sent });
+  return NextResponse.json({ ok: true, recipients: recipients?.length ?? 0, sent, sms });
+}
+
+function renderTemplate(t: string, vars: Record<string, string>) {
+  return t.replace(/\{(\w+)\}/g, (_m, k) => (k in vars ? vars[k] : `{${k}}`));
 }
 
 function dedupeByEmail<T extends { email: string }>(rows: T[]): T[] {

@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo } from 'react';
-import { Building2, Cpu, Wifi, WifiOff, Radio, ArrowRight, CheckCheck } from 'lucide-react';
+import { Building2, Cpu, Wifi, WifiOff, Radio, ArrowRight, CheckCheck, MessageSquare, Check, X } from 'lucide-react';
 import { useApp } from '@/context/AppContext';
 import { MetricCard } from '@/components/shared/MetricCard';
 import { SitesMap } from '@/components/shared/SitesMap';
@@ -9,7 +9,9 @@ import { StatusDot } from '@/components/shared/StatusBadge';
 import { cn, fmtTime, timeAgo } from '@/lib/utils';
 
 export function AdminDashboard() {
-  const { organizations, devices, telemetry, alarms, setPanel, acknowledgeAlarm } = useApp();
+  const { organizations, devices, telemetry, alarms, setPanel, acknowledgeAlarm, smsSettings, reviewOrgSms } = useApp();
+  const pendingSms = smsSettings.filter((s) => s.status === 'pending');
+  const orgName = (id: string) => organizations.find((o) => o.id === id)?.name ?? id;
 
   const online = devices.filter((d) => d.status === 'online').length;
   const offline = devices.length - online;
@@ -83,6 +85,33 @@ export function AdminDashboard() {
 
         {/* Right column */}
         <div className="space-y-6">
+          {/* SMS access requests (pending Super Admin approval) */}
+          {pendingSms.length > 0 && (
+            <div className="card overflow-hidden ring-1 ring-amber-200">
+              <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <MessageSquare size={16} className="text-amber-600" />
+                  <h3 className="text-sm font-bold text-ink">SMS Access Requests</h3>
+                </div>
+                <span className="chip bg-amber-50 text-amber-700">{pendingSms.length}</span>
+              </div>
+              <div className="divide-y divide-slate-50">
+                {pendingSms.map((s) => (
+                  <div key={s.organization_id} className="px-5 py-3 flex items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-ink truncate">{orgName(s.organization_id)}</p>
+                      <p className="text-[11px] text-slate-400">{s.requested_at ? `requested ${timeAgo(s.requested_at)}` : 'awaiting review'}</p>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <button onClick={() => reviewOrgSms(s.organization_id, true)} className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-semibold text-emerald-600 bg-emerald-50 hover:bg-emerald-100 transition-colors cursor-pointer"><Check size={13} /> Approve</button>
+                      <button onClick={() => reviewOrgSms(s.organization_id, false)} className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-semibold text-slate-500 hover:bg-rose-50 hover:text-rose-600 transition-colors cursor-pointer"><X size={13} /> Deny</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Org breakdown */}
           <div className="card overflow-hidden">
             <div className="px-5 py-4 border-b border-slate-100">

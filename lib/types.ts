@@ -61,6 +61,37 @@ export interface AlarmRecord {
   acknowledged: boolean;
 }
 
+export type SmsStatus = 'none' | 'pending' | 'approved' | 'denied';
+
+export interface OrgSmsSettings {
+  organization_id: string;
+  status: SmsStatus;
+  enabled: boolean;
+  requested_by: string | null;
+  requested_at: string | null;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  updated_at: string;
+}
+
+export interface SmsRecipient {
+  id: string;
+  organization_id: string;
+  phone_e164: string;
+  label: string | null;
+  enabled: boolean;
+  created_at: string;
+}
+
+export interface SmsTemplate {
+  id: string;
+  organization_id: string;
+  alarm_type: AlarmType;
+  message: string;
+  enabled: boolean;
+  created_at: string;
+}
+
 export interface AppUser {
   id: string;
   email: string;
