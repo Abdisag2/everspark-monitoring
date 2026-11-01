@@ -28,8 +28,8 @@ export function Modal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-ink/30 backdrop-blur-sm animate-fade-in" onClick={onClose} />
-      <div className={cn('relative w-full card shadow-card-hover animate-scale-in', width)}>
-        <div className="flex items-start justify-between gap-4 p-5 border-b border-slate-100">
+      <div className={cn('relative w-full card shadow-card-hover animate-scale-in flex flex-col max-h-[90vh]', width)}>
+        <div className="flex items-start justify-between gap-4 p-5 border-b border-slate-100 shrink-0">
           <div>
             <h2 className="text-lg font-bold text-ink">{title}</h2>
             {description && <p className="mt-0.5 text-sm text-slate-500">{description}</p>}
@@ -38,8 +38,8 @@ export function Modal({
             <X size={18} />
           </button>
         </div>
-        <div className="p-5">{children}</div>
-        {footer && <div className="flex items-center justify-end gap-2 p-5 pt-0">{footer}</div>}
+        <div className="p-5 overflow-y-auto flex-1 min-h-0">{children}</div>
+        {footer && <div className="flex items-center justify-end gap-2 p-5 pt-0 shrink-0">{footer}</div>}
       </div>
     </div>
   );
