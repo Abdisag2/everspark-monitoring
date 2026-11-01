@@ -84,6 +84,10 @@ interface Ctx {
   addSimPacket: (p: SimPacket) => void;
   acknowledgeAlarm: (id: string) => void;
 
+  // Per-user alarm-email preference (the actually signed-in account, not a previewed role)
+  myAlarmEmailEnabled: boolean;
+  setMyAlarmEmail: (on: boolean) => void;
+
   // RLS-style scoped selectors
   getOrgDevices: (orgId: string) => Device[];
   getDeviceTelemetry: (deviceId: string, limit?: number) => TelemetryRecord[];
@@ -326,6 +330,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   }, [live, refresh]);
 
+  // ----- My notification preferences -----
+  // Toggles the alarm-email flag for the ACTUAL signed-in account (not a
+  // previewed role). Optimistic locally; persisted via a SECURITY DEFINER RPC
+  // so a user can only change their own row, and only this column.
+  const setMyAlarmEmail = useCallback((on: boolean) => {
+    const myId = authUserRef.current?.id ?? userRef.current.id;
+    setProfiles((p) => p.map((x) => (x.id === myId ? { ...x, alarm_email_enabled: on } : x)));
+    if (live) sb().rpc('set_my_alarm_email', { enabled: on }).then(({ error }: { error: any }) => {
+      if (error) console.error('[everspark] alarm-email toggle failed:', error.message);
+    });
+  }, [live]);
+
   // ----- Devices -----
   const addDevice = useCallback((data: { name: string; organization_id: string; location?: string; latitude?: number | null; longitude?: number | null; system_id?: string }) => {
     const token = generateToken();
@@ -481,6 +497,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     return open.filter((a) => myDevices.has(a.device_id));
   }, []);
 
+  const myPrefId = authUser?.id ?? currentUser.id;
+  const myAlarmEmailEnabled = !!profiles.find((p) => p.id === myPrefId)?.alarm_email_enabled;
+
   const value: Ctx = {
     authUser, authReady, login, logout,
     accountExists, requestPasswordReset, resetPassword,
@@ -492,6 +511,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     addProfile, updateProfile, deleteProfile,
     addDevice, updateDevice, deleteDevice, regenerateToken,
     ingestTelemetry, addSimPacket, acknowledgeAlarm,
+    myAlarmEmailEnabled, setMyAlarmEmail,
     getOrgDevices, getDeviceTelemetry, getDeviceHistory, exportDeviceTelemetry, getLatestTelemetry, getDeviceAlarms,
     getVisibleDevices, getVisibleOrgs, getVisibleProfiles, getUnackedAlarms,
   };

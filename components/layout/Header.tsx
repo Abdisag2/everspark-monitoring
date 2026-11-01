@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Bell, Search, Building2, ChevronRight, Check } from 'lucide-react';
+import { Bell, Search, Building2, ChevronRight, Check, Mail } from 'lucide-react';
 import { useApp } from '@/context/AppContext';
 import { NAV_BY_ROLE } from '@/lib/nav';
 import { cn, fmtTime, timeAgo } from '@/lib/utils';
@@ -11,7 +11,8 @@ const EXTRA_TITLES: Record<string, { label: string; desc: string }> = {
 };
 
 export function Header() {
-  const { currentUser, panelState, organizations, devices, getUnackedAlarms, acknowledgeAlarm } = useApp();
+  const { currentUser, panelState, organizations, devices, getUnackedAlarms, acknowledgeAlarm,
+    myAlarmEmailEnabled, setMyAlarmEmail } = useApp();
   const canAck = currentUser.role !== 'viewer';
   const deviceName = (id: string) => devices.find((d) => d.id === id)?.name ?? id;
   const [time, setTime] = useState<string>('');
@@ -106,6 +107,30 @@ export function Header() {
                       <p className="mt-1 text-xs text-slate-600 leading-snug">{a.message}</p>
                     </div>
                   ))}
+                </div>
+                <div className="px-4 py-3 border-t border-slate-100 flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <Mail size={15} className="text-slate-400 shrink-0" />
+                    <div className="min-w-0">
+                      <p className="text-xs font-semibold text-ink leading-tight">Email me alarms</p>
+                      <p className="text-[11px] text-slate-400 truncate">Sent to {currentUser.email}</p>
+                    </div>
+                  </div>
+                  <button
+                    role="switch"
+                    aria-checked={myAlarmEmailEnabled}
+                    aria-label="Toggle alarm email notifications"
+                    onClick={() => setMyAlarmEmail(!myAlarmEmailEnabled)}
+                    className={cn(
+                      'relative h-5 w-9 rounded-full transition-colors cursor-pointer shrink-0',
+                      myAlarmEmailEnabled ? 'bg-brand-600' : 'bg-slate-300'
+                    )}
+                  >
+                    <span className={cn(
+                      'absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-all',
+                      myAlarmEmailEnabled ? 'left-[18px]' : 'left-0.5'
+                    )} />
+                  </button>
                 </div>
               </div>
             </>

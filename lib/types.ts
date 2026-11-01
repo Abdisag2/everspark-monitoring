@@ -15,6 +15,7 @@ export interface Profile {
   name: string;
   role: UserRole;
   is_active: boolean;
+  alarm_email_enabled?: boolean;   // per-user: email me when my org's devices raise an alarm (default off)
   created_at: string;
 }
 
