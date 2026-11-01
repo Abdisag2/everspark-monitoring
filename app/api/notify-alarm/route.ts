@@ -50,13 +50,16 @@ export async function POST(req: NextRequest) {
     .single();
   if (!device) return NextResponse.json({ error: 'Device not found' }, { status: 404 });
 
-  // Opted-in, active users in the device's org.
-  const { data: recipients } = await admin
+  // Recipients: opted-in, active users who are EITHER in the device's org
+  // OR a platform admin (admins receive alarms for every device). Deduped by
+  // email in case the same address matches both conditions.
+  const { data: rows } = await admin
     .from('profiles')
     .select('email, name')
-    .eq('organization_id', device.organization_id)
     .eq('alarm_email_enabled', true)
-    .eq('is_active', true);
+    .eq('is_active', true)
+    .or(`organization_id.eq.${device.organization_id},role.eq.admin`);
+  const recipients = dedupeByEmail(rows ?? []);
 
   const from = process.env.ALARM_FROM_EMAIL || 'no-reply@eversparktech.com';
   const label = ALARM_LABELS[alarm.alarm_type] ?? alarm.alarm_type;
@@ -113,6 +116,16 @@ You get this because device-alarm emails are on for your account. Turn them off 
   await admin.from('alarms').update({ notified_at: new Date().toISOString() }).eq('id', alarmId);
 
   return NextResponse.json({ ok: true, recipients: recipients?.length ?? 0, sent });
+}
+
+function dedupeByEmail<T extends { email: string }>(rows: T[]): T[] {
+  const seen = new Set<string>();
+  return rows.filter((r) => {
+    const k = (r.email || '').toLowerCase();
+    if (!k || seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
 }
 
 function escapeHtml(s: string) {
