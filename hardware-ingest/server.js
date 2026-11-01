@@ -85,10 +85,12 @@ const server = http.createServer((req, res) => {
       const device = devs[0];
       const ts = new Date().toISOString();
 
-      // Previous frame's level_sensor_1, for the production-complete transition.
-      const prevRes = await sb(`telemetry_data?device_id=eq.${device.id}&order=timestamp.desc&limit=1&select=level_sensor_1`);
+      // Previous frame's level sensors, for edge-triggered alarms.
+      const prevRes = await sb(`telemetry_data?device_id=eq.${device.id}&order=timestamp.desc&limit=1&select=level_sensor_1,level_sensor_3`);
       const prevArr = await prevRes.json().catch(() => []);
-      const prevL1 = Array.isArray(prevArr) && prevArr.length ? Number(prevArr[0].level_sensor_1) : null;
+      const prevRow = Array.isArray(prevArr) && prevArr.length ? prevArr[0] : null;
+      const prevL1 = prevRow ? Number(prevRow.level_sensor_1) : null;
+      const prevL3 = prevRow ? Number(prevRow.level_sensor_3) : null;
 
       const ins = await sb('telemetry_data', {
         method: 'POST',
@@ -109,14 +111,9 @@ const server = http.createServer((req, res) => {
       if (prevL1 === 1 && frame.level_sensor_1 === 0 && frame.level_sensor_2 === 0) {
         await raise('production_complete', 'Chlorine production is completed. Please start a new production.');
       }
-      // 2. NaClO depleted: level 3 == 1 (debounced — one open alarm per hour).
-      if (frame.level_sensor_3 === 1) {
-        const since = new Date(Date.now() - 3600e3).toISOString();
-        const recentRes = await sb(`alarms?device_id=eq.${device.id}&alarm_type=eq.no_naclo&acknowledged=eq.false&timestamp=gte.${since}&select=id&limit=1`);
-        const recent = await recentRes.json().catch(() => []);
-        if (!Array.isArray(recent) || recent.length === 0) {
-          await raise('no_naclo', 'There is no Chlorine in the Clara system. Please immediately start a new production.');
-        }
+      // 2. NaClO depleted: level 3 transitions 1 (available) -> 0 (empty).
+      if (prevL3 === 1 && frame.level_sensor_3 === 0) {
+        await raise('no_naclo', 'There is no Chlorine in the Clara system. Please immediately start a new production.');
       }
 
       console.log(`[${ts}] ${device.name} <- ${data}`);
