@@ -77,7 +77,7 @@ interface Ctx {
   updateProfile: (id: string, u: Partial<Profile>) => void;
   deleteProfile: (id: string) => void;
 
-  addDevice: (d: { name: string; organization_id: string; location?: string; system_id?: string }) => Device;
+  addDevice: (d: { name: string; organization_id: string; location?: string; system_id?: string; sim_number?: string }) => Device;
   updateDevice: (id: string, u: Partial<Device>) => void;
   deleteDevice: (id: string) => void;
   regenerateToken: (id: string) => string;
@@ -452,7 +452,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, [live, refresh]);
 
   // ----- Devices -----
-  const addDevice = useCallback((data: { name: string; organization_id: string; location?: string; latitude?: number | null; longitude?: number | null; system_id?: string }) => {
+  const addDevice = useCallback((data: { name: string; organization_id: string; location?: string; latitude?: number | null; longitude?: number | null; system_id?: string; sim_number?: string }) => {
     const token = generateToken();
     const d: Device = {
       id: `dev-${seq()}`, ...data, secret_token: token,
@@ -463,7 +463,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       name: d.name, organization_id: d.organization_id, secret_token: token,
       status: 'offline', location: d.location ?? null,
       latitude: d.latitude ?? null, longitude: d.longitude ?? null,
-      system_id: d.system_id ?? null,
+      system_id: d.system_id ?? null, sim_number: d.sim_number ?? null,
     }).then(({ error }) => { if (error) console.error('[everspark] device create failed:', error.message); refresh(); });
     return d;
   }, [live, refresh]);

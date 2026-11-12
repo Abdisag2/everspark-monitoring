@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import {
-  Cpu, Plus, Pencil, Trash2, Search, KeyRound, RefreshCw, Radio, MapPin, Eye, EyeOff,
+  Cpu, Plus, Pencil, Trash2, Search, KeyRound, RefreshCw, Radio, MapPin, Eye, EyeOff, Smartphone,
 } from 'lucide-react';
 import { useApp } from '@/context/AppContext';
 import { Modal } from '@/components/shared/Modal';
@@ -17,8 +17,8 @@ const SAMPLE_FRAME = buildDataString({
   naclo_pumped: 110.5, target_frc: 1.0, active_chlorine: 0.5, ph_value: 7.2,
 });
 
-interface FormState { name: string; organization_id: string; location: string; system_id: string; }
-const EMPTY: FormState = { name: '', organization_id: '', location: '', system_id: '' };
+interface FormState { name: string; organization_id: string; location: string; system_id: string; sim_number: string; }
+const EMPTY: FormState = { name: '', organization_id: '', location: '', system_id: '', sim_number: '' };
 
 export function DeviceConfiguration({ scopeOrgId }: { scopeOrgId?: string }) {
   const { devices, organizations, addDevice, updateDevice, deleteDevice, regenerateToken, setPanel } = useApp();
@@ -44,19 +44,22 @@ export function DeviceConfiguration({ scopeOrgId }: { scopeOrgId?: string }) {
   const openCreate = () => { setForm({ ...EMPTY, organization_id: scopeOrgId ?? orgOptions[0]?.id ?? '' }); setCreating(true); };
   const openEdit = (d: Device) => {
     const loc = d.latitude != null && d.longitude != null ? `${d.latitude}, ${d.longitude}` : (d.location ?? '');
-    setForm({ name: d.name, organization_id: d.organization_id, location: loc, system_id: d.system_id ?? '' });
+    setForm({ name: d.name, organization_id: d.organization_id, location: loc, system_id: d.system_id ?? '', sim_number: d.sim_number ?? '' });
     setEditing(d);
   };
   const tokenDevice = tokenFor ? devices.find((d) => d.id === tokenFor.id) ?? tokenFor : null;
   const locCoords = parseLatLng(form.location);
 
+  const canSave = !!form.name.trim() && !!form.organization_id && !!form.sim_number.trim();
+
   const save = () => {
-    if (!form.name.trim() || !form.organization_id) return;
+    if (!canSave) return;
     const coords = parseLatLng(form.location);
     const common = {
       location: form.location.trim() || undefined,
       latitude: coords?.lat ?? null,
       longitude: coords?.lng ?? null,
+      sim_number: form.sim_number.trim(),
     };
     if (editing) {
       updateDevice(editing.id, { name: form.name.trim(), organization_id: form.organization_id, system_id: form.system_id.trim(), ...common });
@@ -91,6 +94,7 @@ export function DeviceConfiguration({ scopeOrgId }: { scopeOrgId?: string }) {
                 <th className="text-left font-semibold px-5 py-3">Device</th>
                 {!scopeOrgId && <th className="text-left font-semibold px-3 py-3">Organization</th>}
                 <th className="text-left font-semibold px-3 py-3">Location</th>
+                <th className="text-left font-semibold px-3 py-3">SIM card</th>
                 <th className="text-left font-semibold px-3 py-3">Status</th>
                 <th className="text-left font-semibold px-3 py-3">Last seen</th>
                 <th className="text-left font-semibold px-3 py-3">Token</th>
@@ -110,6 +114,11 @@ export function DeviceConfiguration({ scopeOrgId }: { scopeOrgId?: string }) {
                   <td className="px-3 py-3 text-slate-500">
                     {d.location ? <span className="inline-flex items-center gap-1"><MapPin size={12} className="text-slate-400" />{d.location}</span> : <span className="text-slate-300">—</span>}
                   </td>
+                  <td className="px-3 py-3">
+                    {d.sim_number
+                      ? <span className="inline-flex items-center gap-1.5 font-mono text-xs text-slate-600"><Smartphone size={12} className="text-slate-400" />{d.sim_number}</span>
+                      : <span className="inline-flex items-center gap-1 text-xs text-rose-400" title="No SIM number set — edit the device to add one">⚠ not set</span>}
+                  </td>
                   <td className="px-3 py-3"><StatusBadge online={d.status === 'online'} /></td>
                   <td className="px-3 py-3 text-slate-500 whitespace-nowrap">{timeAgo(d.last_seen)}</td>
                   <td className="px-3 py-3">
@@ -127,7 +136,7 @@ export function DeviceConfiguration({ scopeOrgId }: { scopeOrgId?: string }) {
                 </tr>
               ))}
               {rows.length === 0 && (
-                <tr><td colSpan={7} className="px-5 py-12 text-center text-sm text-slate-400">
+                <tr><td colSpan={8} className="px-5 py-12 text-center text-sm text-slate-400">
                   <Cpu size={26} className="mx-auto text-slate-300 mb-2" /> No devices registered yet.
                 </td></tr>
               )}
@@ -146,7 +155,7 @@ export function DeviceConfiguration({ scopeOrgId }: { scopeOrgId?: string }) {
         footer={
           <>
             <button onClick={() => { setCreating(false); setEditing(null); }} className="btn-outline">Cancel</button>
-            <button onClick={save} disabled={!form.name.trim() || !form.organization_id} className="btn-primary">{editing ? 'Save changes' : 'Register & generate token'}</button>
+            <button onClick={save} disabled={!canSave} className="btn-primary">{editing ? 'Save changes' : 'Register & generate token'}</button>
           </>
         }
       >
@@ -154,6 +163,13 @@ export function DeviceConfiguration({ scopeOrgId }: { scopeOrgId?: string }) {
           <label className="block sm:col-span-2">
             <span className="text-sm font-medium text-slate-700">Device name</span>
             <input autoFocus value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder='Clara-MWA "Korata" (CI-4824-01)' className="input mt-1.5" />
+          </label>
+          <label className="block sm:col-span-2">
+            <span className="text-sm font-medium text-slate-700">SIM card number <span className="text-rose-500">*</span> <span className="text-slate-400 font-normal">— for airtime recharge when a device goes offline</span></span>
+            <div className="relative mt-1.5">
+              <Smartphone size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input value={form.sim_number} onChange={(e) => setForm({ ...form, sim_number: e.target.value })} placeholder="+251912345678" className="input pl-9 font-mono" />
+            </div>
           </label>
           <label className="block">
             <span className="text-sm font-medium text-slate-700">Organization</span>

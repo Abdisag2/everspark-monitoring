@@ -31,6 +31,7 @@ export interface Device {
   latitude?: number | null;
   longitude?: number | null;
   system_id?: string;
+  sim_number?: string;        // phone number of the device's SIM card (for airtime top-ups)
   created_at: string;
 }
 

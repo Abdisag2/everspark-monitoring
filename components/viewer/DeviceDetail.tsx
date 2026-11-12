@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   ArrowLeft, Clock, Droplets, FlaskConical, Gauge, Activity, Download, ChevronDown,
-  MapPin, Cpu, CircleSlash, CheckCircle2,
+  MapPin, Cpu, CircleSlash, CheckCircle2, Smartphone,
 } from 'lucide-react';
 import { useApp } from '@/context/AppContext';
 import { StatusBadge } from '@/components/shared/StatusBadge';
@@ -139,6 +139,11 @@ export function DeviceDetail({ deviceId, backView }: { deviceId: string; backVie
               <span className="inline-flex items-center gap-1"><Cpu size={12} />{orgName}</span>
               {device.location && <span className="inline-flex items-center gap-1"><MapPin size={12} />{device.location}</span>}
               {device.system_id && <span className="font-mono">{device.system_id}</span>}
+              {device.sim_number && (
+                <span className={cn('inline-flex items-center gap-1 font-mono', device.status === 'offline' && 'text-rose-500 font-semibold')}>
+                  <Smartphone size={12} /> SIM {device.sim_number}
+                </span>
+              )}
             </div>
           </div>
         </div>
