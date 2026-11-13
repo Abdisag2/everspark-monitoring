@@ -160,6 +160,8 @@ You get this because device-alarm emails are on for your account. Turn them off 
               Message: msg,
               MessageAttributes: {
                 'AWS.SNS.SMS.SMSType': { DataType: 'String', StringValue: 'Transactional' },
+                // Pin the registered Sender ID so Ethiopia (+251) accepts delivery.
+                'AWS.SNS.SMS.SenderID': { DataType: 'String', StringValue: process.env.SMS_SENDER_ID || 'EVERSPARK' },
               },
             }));
             sms++;
