@@ -122,6 +122,7 @@ You get this because device-alarm emails are on for your account. Turn them off 
 
   // --- SMS: text each enabled operator number, if the org has SMS enabled ---
   let sms = 0;
+  const smsErrors: string[] = [];
   try {
     const { data: smsCfg } = await admin
       .from('org_sms_settings')
@@ -167,18 +168,20 @@ You get this because device-alarm emails are on for your account. Turn them off 
             sms++;
           } catch (e: any) {
             console.error('[everspark] alarm SMS failed for', n.phone_e164, '-', e?.message);
+            smsErrors.push(`${n.phone_e164}: ${e?.name || ''} ${e?.message || e}`.trim());
           }
         }
       }
     }
   } catch (e: any) {
     console.error('[everspark] SMS block error:', e?.message);
+    smsErrors.push(`block: ${e?.message || e}`);
   }
 
   // Stamp as notified even if there were no recipients, so we don't re-scan it.
   await admin.from('alarms').update({ notified_at: new Date().toISOString() }).eq('id', alarmId);
 
-  return NextResponse.json({ ok: true, recipients: recipients?.length ?? 0, sent, sms });
+  return NextResponse.json({ ok: true, recipients: recipients?.length ?? 0, sent, sms, smsErrors });
 }
 
 function renderTemplate(t: string, vars: Record<string, string>) {
