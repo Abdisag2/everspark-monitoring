@@ -1,5 +1,5 @@
 import {
-  LayoutDashboard, Building2, Cpu, Users, Radio, Settings, UserPlus, MonitorDot, Bell,
+  LayoutDashboard, Building2, Cpu, Users, Radio, Settings, UserPlus, MonitorDot, Bell, FileBarChart2,
   type LucideIcon,
 } from 'lucide-react';
 import type { PanelView, UserRole } from './types';
@@ -41,7 +41,8 @@ export const NAV_BY_ROLE: Record<UserRole, NavSection[]> = {
     {
       heading: 'Account',
       items: [
-        { view: 'notifications', label: 'Notifications', icon: Bell, desc: 'Alarm emails & monthly reports' },
+        { view: 'reports',       label: 'Reports',       icon: FileBarChart2, desc: 'Monthly & on-demand reports' },
+        { view: 'notifications', label: 'Notifications', icon: Bell,          desc: 'Your alarm emails' },
       ],
     },
   ],
@@ -63,7 +64,8 @@ export const NAV_BY_ROLE: Record<UserRole, NavSection[]> = {
     {
       heading: 'Account',
       items: [
-        { view: 'notifications', label: 'Notifications', icon: Bell, desc: 'Alarm emails & monthly reports' },
+        { view: 'reports',       label: 'Reports',       icon: FileBarChart2, desc: 'Monthly & on-demand reports' },
+        { view: 'notifications', label: 'Notifications', icon: Bell,          desc: 'Your alarm emails' },
       ],
     },
   ],
@@ -77,7 +79,8 @@ export const NAV_BY_ROLE: Record<UserRole, NavSection[]> = {
     {
       heading: 'Account',
       items: [
-        { view: 'notifications', label: 'Notifications', icon: Bell, desc: 'Alarm emails & monthly reports' },
+        { view: 'reports',       label: 'Reports',       icon: FileBarChart2, desc: 'Monthly & on-demand reports' },
+        { view: 'notifications', label: 'Notifications', icon: Bell,          desc: 'Your alarm emails' },
       ],
     },
   ],

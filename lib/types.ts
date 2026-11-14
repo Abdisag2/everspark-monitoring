@@ -143,6 +143,7 @@ export type PanelView =
   | 'team'
   | 'viewer-devices'
   | 'notifications'
+  | 'reports'
   | 'device-monitoring';
 
 export type PanelState =
