@@ -96,6 +96,13 @@ export interface EmailAlarmDevice {
   device_id: string;
 }
 
+/** A user's opt-in to a monthly CSV+PDF report for one device. */
+export interface ReportSubscription {
+  user_id: string;
+  device_id: string;
+  created_at?: string;
+}
+
 export interface SmsTemplate {
   id: string;
   organization_id: string;

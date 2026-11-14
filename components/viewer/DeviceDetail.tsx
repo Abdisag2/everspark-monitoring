@@ -3,8 +3,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   ArrowLeft, Clock, Droplets, FlaskConical, Gauge, Activity, Download, ChevronDown,
-  MapPin, Cpu, CircleSlash, CheckCircle2, Smartphone,
+  MapPin, Cpu, CircleSlash, CheckCircle2, Smartphone, FileDown,
 } from 'lucide-react';
+import { windowLabel } from '@/lib/report';
+import { downloadReportPdf } from '@/lib/report-download';
 import { useApp } from '@/context/AppContext';
 import { StatusBadge } from '@/components/shared/StatusBadge';
 import { MetricCard } from '@/components/shared/MetricCard';
@@ -23,6 +25,7 @@ export function DeviceDetail({ deviceId, backView }: { deviceId: string; backVie
   const [history, setHistory] = useState<TelemetryRecord[]>([]);
   const [loading, setLoading] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [exportingPdf, setExportingPdf] = useState(false);
 
   const device = devices.find((d) => d.id === deviceId);
 
@@ -120,6 +123,21 @@ export function DeviceDetail({ deviceId, backView }: { deviceId: string; backVie
     }
   };
 
+  const exportPdf = async () => {
+    if (exportingPdf || !device) return;
+    setExportingPdf(true);
+    try {
+      const fromMs = rangeStartMs(range);
+      const toMs = Date.now();
+      const rows = await exportDeviceTelemetry(deviceId, fromMs);
+      await downloadReportPdf(rows, {
+        device, orgName, fromMs, toMs, periodLabel: windowLabel(fromMs, toMs), kind: 'custom',
+      });
+    } finally {
+      setExportingPdf(false);
+    }
+  };
+
   return (
     <div className="space-y-5 animate-fade-in">
       {/* Header */}
@@ -150,7 +168,8 @@ export function DeviceDetail({ deviceId, backView }: { deviceId: string; backVie
         <div className="flex items-center gap-2 shrink-0">
           {loading && <span className="text-xs text-slate-400 animate-pulse">updating…</span>}
           <TimeRangePicker value={range} onChange={setRange} />
-          <button onClick={exportCsv} disabled={exporting} className="btn-outline py-2"><Download size={15} /> {exporting ? 'Exporting…' : 'Export'}</button>
+          <button onClick={exportCsv} disabled={exporting} className="btn-outline py-2"><Download size={15} /> {exporting ? 'Exporting…' : 'CSV'}</button>
+          <button onClick={exportPdf} disabled={exportingPdf} className="btn-outline py-2"><FileDown size={15} /> {exportingPdf ? 'Building…' : 'PDF'}</button>
         </div>
       </div>
 

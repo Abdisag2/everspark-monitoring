@@ -5,7 +5,7 @@ import type {
   Organization, Profile, Device, TelemetryRecord, AlarmRecord,
   AppUser, UserRole, SimPacket, PanelState,
   OrgSmsSettings, SmsRecipient, SmsTemplate, AlarmType,
-  SmsRecipientDevice, EmailAlarmDevice,
+  SmsRecipientDevice, EmailAlarmDevice, ReportSubscription,
 } from '@/lib/types';
 import {
   MOCK_ORGANIZATIONS, MOCK_PROFILES, MOCK_DEVICES, MOCK_TELEMETRY, MOCK_ALARMS,
@@ -94,6 +94,10 @@ interface Ctx {
   setMyAlarmEmailAllDevices: (all: boolean) => void;
   setMyEmailDevices: (deviceIds: string[]) => void;
 
+  // Per-user monthly-report subscriptions (CSV + PDF emailed at month end)
+  myReportDeviceIds: string[];                  // devices I subscribed to a monthly report for
+  setMyReportDevices: (deviceIds: string[]) => void;
+
   // SMS alarms (Phase 2): approval workflow + operator numbers + per-alarm templates + device scope
   smsSettings: OrgSmsSettings[];
   smsRecipients: SmsRecipient[];
@@ -142,6 +146,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [smsTemplates, setSmsTemplates] = useState<SmsTemplate[]>([]);
   const [smsRecipientDevices, setSmsRecipientDevices] = useState<SmsRecipientDevice[]>([]);
   const [emailAlarmDevices, setEmailAlarmDevices] = useState<EmailAlarmDevice[]>([]);
+  const [reportSubs, setReportSubs] = useState<ReportSubscription[]>([]);
   const [panelState, setPanelState] = useState<PanelState>({ view: 'admin-dashboard' });
 
   // refs so stable callbacks read fresh state without re-binding
@@ -280,7 +285,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const refresh = useCallback(async () => {
     const supabase = getSupabase();
     if (!supabase) return;
-    const [orgsR, devsR, profsR, telR, almR, smsR, rcptR, tmplR, srdR, eadR] = await Promise.all([
+    const [orgsR, devsR, profsR, telR, almR, smsR, rcptR, tmplR, srdR, eadR, rsubR] = await Promise.all([
       supabase.from('organizations').select('*').order('created_at', { ascending: true }),
       supabase.from('devices').select('*').order('created_at', { ascending: true }),
       supabase.from('profiles').select('*'),
@@ -291,6 +296,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       supabase.from('sms_templates').select('*'),
       supabase.from('sms_recipient_devices').select('*'),
       supabase.from('email_alarm_devices').select('*'),
+      supabase.from('report_subscriptions').select('*'),
     ]);
     if (orgsR.data) setOrgs(orgsR.data as Organization[]);
     if (devsR.data) setDevices(devsR.data as Device[]);
@@ -302,6 +308,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     if (tmplR.data) setSmsTemplates(tmplR.data as SmsTemplate[]);
     if (srdR.data) setSmsRecipientDevices(srdR.data as SmsRecipientDevice[]);
     if (eadR.data) setEmailAlarmDevices(eadR.data as EmailAlarmDevice[]);
+    if (rsubR.data) setReportSubs(rsubR.data as ReportSubscription[]);
   }, []);
   const live = isSupabaseConfigured;
   const sb = () => getSupabase()!;
@@ -447,6 +454,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setEmailAlarmDevices((p) => [...p.filter((x) => x.user_id !== myId), ...deviceIds.map((d) => ({ user_id: myId, device_id: d }))]);
     if (live) sb().from('email_alarm_devices').delete().eq('user_id', myId).then(() => {
       if (deviceIds.length) sb().from('email_alarm_devices').insert(deviceIds.map((d) => ({ user_id: myId, device_id: d }))).then(() => refresh());
+      else refresh();
+    });
+  }, [live, refresh]);
+
+  const setMyReportDevices = useCallback((deviceIds: string[]) => {
+    const myId = authUserRef.current?.id ?? userRef.current.id;
+    setReportSubs((p) => [...p.filter((x) => x.user_id !== myId), ...deviceIds.map((d) => ({ user_id: myId, device_id: d }))]);
+    if (live) sb().from('report_subscriptions').delete().eq('user_id', myId).then(() => {
+      if (deviceIds.length) sb().from('report_subscriptions').insert(deviceIds.map((d) => ({ user_id: myId, device_id: d }))).then(() => refresh());
       else refresh();
     });
   }, [live, refresh]);
@@ -611,6 +627,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const myAlarmEmailEnabled = !!myProfileForPrefs?.alarm_email_enabled;
   const myAlarmEmailAllDevices = myProfileForPrefs?.alarm_email_all_devices ?? true;
   const myEmailDeviceIds = emailAlarmDevices.filter((e) => e.user_id === myPrefId).map((e) => e.device_id);
+  const myReportDeviceIds = reportSubs.filter((e) => e.user_id === myPrefId).map((e) => e.device_id);
 
   const value: Ctx = {
     authUser, authReady, login, logout,
@@ -625,6 +642,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     ingestTelemetry, addSimPacket, acknowledgeAlarm,
     myAlarmEmailEnabled, setMyAlarmEmail,
     myAlarmEmailAllDevices, myEmailDeviceIds, setMyAlarmEmailAllDevices, setMyEmailDevices,
+    myReportDeviceIds, setMyReportDevices,
     smsSettings, smsRecipients, smsTemplates, smsRecipientDevices,
     requestOrgSms, reviewOrgSms, addSmsRecipient, updateSmsRecipient, deleteSmsRecipient, assignSmsRecipientDevices, upsertSmsTemplate,
     getOrgDevices, getDeviceTelemetry, getDeviceHistory, exportDeviceTelemetry, getLatestTelemetry, getDeviceAlarms,

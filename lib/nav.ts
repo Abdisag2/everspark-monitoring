@@ -41,7 +41,7 @@ export const NAV_BY_ROLE: Record<UserRole, NavSection[]> = {
     {
       heading: 'Account',
       items: [
-        { view: 'notifications', label: 'Notifications', icon: Bell, desc: 'Your alarm emails' },
+        { view: 'notifications', label: 'Notifications', icon: Bell, desc: 'Alarm emails & monthly reports' },
       ],
     },
   ],
@@ -63,7 +63,7 @@ export const NAV_BY_ROLE: Record<UserRole, NavSection[]> = {
     {
       heading: 'Account',
       items: [
-        { view: 'notifications', label: 'Notifications', icon: Bell, desc: 'Your alarm emails' },
+        { view: 'notifications', label: 'Notifications', icon: Bell, desc: 'Alarm emails & monthly reports' },
       ],
     },
   ],
@@ -77,7 +77,7 @@ export const NAV_BY_ROLE: Record<UserRole, NavSection[]> = {
     {
       heading: 'Account',
       items: [
-        { view: 'notifications', label: 'Notifications', icon: Bell, desc: 'Your alarm emails' },
+        { view: 'notifications', label: 'Notifications', icon: Bell, desc: 'Alarm emails & monthly reports' },
       ],
     },
   ],
