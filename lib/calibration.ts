@@ -141,6 +141,12 @@ export function demoDeviceAnswer(deviceId: string, cmd: string): { ok: boolean; 
   if (low === 'status') {
     return { ok: true, response: `Clara v3.1  state=Standby  voltage=${fmt(vals['voltage_ref'] ?? 5)} V  dosing link OK  remote_cal=${vals['remote_cal']}` };
   }
+  if (low === 'restart') {
+    return { ok: true, response: 'ok - restarting the main board, the batch continues where it is' };
+  }
+  if (low === 'dosing restart') {
+    return { ok: true, response: 'ok - dosing board restarting (calibration kept, totals start at 0)' };
+  }
   if (tok[0].toLowerCase() === 'set' && tok[1] && tok[2] != null) {
     const p = MAIN_PARAMS.find((x) => x.name === tok[1].toLowerCase());
     if (!p) return { ok: false, response: `error - unknown parameter ${tok[1]}` };

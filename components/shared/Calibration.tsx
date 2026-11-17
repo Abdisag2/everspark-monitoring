@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   SlidersHorizontal, Lock, Save, CheckCircle2, XCircle, RefreshCw,
-  Clock, Loader2, AlertTriangle, Droplet, ShieldAlert,
+  Clock, Loader2, AlertTriangle, Droplet, ShieldAlert, Power,
 } from 'lucide-react';
 import { useApp } from '@/context/AppContext';
 import { MAIN_PARAMS, DOSING_PARAMS, parseParamDump, type ParsedParam } from '@/lib/calibration';
@@ -37,6 +37,7 @@ export function Calibration() {
   const [edits, setEdits] = useState<Record<string, string>>({});
   const [confirm, setConfirm] = useState<{ name: string; label: string; oldVal?: number; newVal: number; unit: string; dosing: boolean } | null>(null);
   const [savingId, setSavingId] = useState<string | null>(null);
+  const [restartTarget, setRestartTarget] = useState<'main' | 'dosing' | null>(null);
 
   const device = devices.find((d) => d.id === deviceId);
 
@@ -103,6 +104,13 @@ export function Calibration() {
     const res = await queueDeviceCommand(device.id, line);
     setConfirm(null);
     if (res.ok && res.id) setSavingId(res.id);
+  };
+
+  // Restart does not re-read (the board is rebooting) — just queue it.
+  const doRestart = async () => {
+    if (!device || !restartTarget) return;
+    await queueDeviceCommand(device.id, restartTarget === 'main' ? 'restart' : 'dosing restart');
+    setRestartTarget(null);
   };
 
   // After a set finishes, re-read so the tables reflect the device's truth.
@@ -241,6 +249,27 @@ export function Calibration() {
         </div>
       )}
 
+      {/* Restart (admin only) */}
+      {isAdmin && device && (
+        <div className="card p-5 space-y-3">
+          <div className="flex items-center gap-2">
+            <Power size={16} className="text-rose-500" />
+            <p className="text-sm font-semibold text-ink">Restart</p>
+          </div>
+          <p className="text-xs text-slate-400">
+            Reboot a board remotely. The main board keeps its running batch; the dosing board keeps its calibration.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <button onClick={() => setRestartTarget('main')} className="btn-outline py-2">
+              <Power size={14} /> Restart main board
+            </button>
+            <button onClick={() => setRestartTarget('dosing')} className="btn-outline py-2">
+              <Power size={14} /> Restart dosing board
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Activity / audit */}
       <div className="card p-5 space-y-3">
         <p className="text-sm font-semibold text-ink">Recent commands</p>
@@ -274,6 +303,28 @@ export function Calibration() {
               <button onClick={applySet} className={`py-2 px-3 text-sm text-white rounded-xl font-semibold ${confirm.dosing ? 'bg-rose-600 hover:bg-rose-700' : 'bg-brand-600 hover:bg-brand-700'}`}>
                 Send to device
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Restart confirm modal */}
+      {restartTarget && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-slate-900/40 p-4" onClick={() => setRestartTarget(null)}>
+          <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center gap-2.5">
+              <span className="grid place-items-center h-9 w-9 rounded-xl bg-rose-50 text-rose-600"><Power size={18} /></span>
+              <p className="text-sm font-bold text-ink">{restartTarget === 'main' ? 'Restart the main board?' : 'Restart the dosing board?'}</p>
+            </div>
+            <p className="mt-4 text-sm text-slate-600">
+              {restartTarget === 'main'
+                ? <>The main board at <b>{device?.name}</b> will reboot now. The running batch is saved and continues after it comes back; the unit is unreachable for a few seconds.</>
+                : <>The dosing board at <b>{device?.name}</b> will reboot now. Its calibration is kept, but the water &amp; NaClO totals reset to 0.</>}
+            </p>
+            <p className="mt-2 font-mono text-[11px] text-slate-400">{restartTarget === 'main' ? 'restart' : 'dosing restart'}</p>
+            <div className="mt-4 flex justify-end gap-2">
+              <button onClick={() => setRestartTarget(null)} className="btn-outline py-2 px-3 text-sm">Cancel</button>
+              <button onClick={doRestart} className="py-2 px-3 text-sm text-white rounded-xl font-semibold bg-rose-600 hover:bg-rose-700">Restart</button>
             </div>
           </div>
         </div>
