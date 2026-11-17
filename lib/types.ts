@@ -103,6 +103,25 @@ export interface ReportSubscription {
   created_at?: string;
 }
 
+export type CommandKind = 'read' | 'write';
+export type CommandStatus = 'queued' | 'sent' | 'acked' | 'error' | 'timeout' | 'canceled';
+
+/** A remote-calibration command queued for a device (round-trips via EC2 + RS485). */
+export interface DeviceCommand {
+  id: string;
+  device_id: string;
+  organization_id: string;
+  command: string;            // exact console line, e.g. 'set report_interval 60'
+  kind: CommandKind;
+  status: CommandStatus;
+  response: string | null;    // Clara's text answer, or a transport note
+  issued_by: string | null;
+  issued_role: string | null;
+  created_at: string;
+  sent_at: string | null;
+  acked_at: string | null;
+}
+
 export interface SmsTemplate {
   id: string;
   organization_id: string;
@@ -144,6 +163,7 @@ export type PanelView =
   | 'viewer-devices'
   | 'notifications'
   | 'reports'
+  | 'calibration'
   | 'device-monitoring';
 
 export type PanelState =

@@ -20,6 +20,7 @@ import { DeviceList } from '@/components/viewer/DeviceList';
 import { DeviceDetail } from '@/components/viewer/DeviceDetail';
 import { NotificationSettings } from '@/components/shared/NotificationSettings';
 import { Reports } from '@/components/shared/Reports';
+import { Calibration } from '@/components/shared/Calibration';
 
 export default function DashboardPage() {
   const { panelState, currentUser, authUser, authReady } = useApp();
@@ -58,6 +59,7 @@ export default function DashboardPage() {
       case 'viewer-devices':    return <DeviceList />;
       case 'notifications':     return <NotificationSettings />;
       case 'reports':           return <Reports />;
+      case 'calibration':       return <Calibration />;
       case 'device-monitoring':
         return <DeviceDetail deviceId={panelState.deviceId} backView={panelState.backView} />;
       default:                  return <AdminDashboard />;

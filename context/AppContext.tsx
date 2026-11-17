@@ -5,8 +5,9 @@ import type {
   Organization, Profile, Device, TelemetryRecord, AlarmRecord,
   AppUser, UserRole, SimPacket, PanelState,
   OrgSmsSettings, SmsRecipient, SmsTemplate, AlarmType,
-  SmsRecipientDevice, EmailAlarmDevice, ReportSubscription,
+  SmsRecipientDevice, EmailAlarmDevice, ReportSubscription, DeviceCommand,
 } from '@/lib/types';
+import { demoDeviceAnswer } from '@/lib/calibration';
 import {
   MOCK_ORGANIZATIONS, MOCK_PROFILES, MOCK_DEVICES, MOCK_TELEMETRY, MOCK_ALARMS,
 } from '@/lib/mock-data';
@@ -98,6 +99,11 @@ interface Ctx {
   myReportDeviceIds: string[];                  // devices I subscribed to a monthly report for
   setMyReportDevices: (deviceIds: string[]) => void;
 
+  // Remote calibration: command queue + enqueue (round-trips via EC2 + RS485)
+  deviceCommands: DeviceCommand[];
+  queueDeviceCommand: (deviceId: string, cmd: string) => Promise<{ ok: boolean; id?: string; error?: string }>;
+  getDeviceCommands: (deviceId: string) => DeviceCommand[];
+
   // SMS alarms (Phase 2): approval workflow + operator numbers + per-alarm templates + device scope
   smsSettings: OrgSmsSettings[];
   smsRecipients: SmsRecipient[];
@@ -147,6 +153,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [smsRecipientDevices, setSmsRecipientDevices] = useState<SmsRecipientDevice[]>([]);
   const [emailAlarmDevices, setEmailAlarmDevices] = useState<EmailAlarmDevice[]>([]);
   const [reportSubs, setReportSubs] = useState<ReportSubscription[]>([]);
+  const [deviceCommands, setDeviceCommands] = useState<DeviceCommand[]>([]);
   const [panelState, setPanelState] = useState<PanelState>({ view: 'admin-dashboard' });
 
   // refs so stable callbacks read fresh state without re-binding
@@ -155,6 +162,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const alarmRef = useRef(alarms); alarmRef.current = alarms;
   const orgRef = useRef(organizations); orgRef.current = organizations;
   const profRef = useRef(profiles); profRef.current = profiles;
+  const cmdRef = useRef(deviceCommands); cmdRef.current = deviceCommands;
   const userRef = useRef(currentUser); userRef.current = currentUser;
   const authUserRef = useRef(authUser); authUserRef.current = authUser;
 
@@ -285,7 +293,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const refresh = useCallback(async () => {
     const supabase = getSupabase();
     if (!supabase) return;
-    const [orgsR, devsR, profsR, telR, almR, smsR, rcptR, tmplR, srdR, eadR, rsubR] = await Promise.all([
+    const [orgsR, devsR, profsR, telR, almR, smsR, rcptR, tmplR, srdR, eadR, rsubR, dcR] = await Promise.all([
       supabase.from('organizations').select('*').order('created_at', { ascending: true }),
       supabase.from('devices').select('*').order('created_at', { ascending: true }),
       supabase.from('profiles').select('*'),
@@ -297,6 +305,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       supabase.from('sms_recipient_devices').select('*'),
       supabase.from('email_alarm_devices').select('*'),
       supabase.from('report_subscriptions').select('*'),
+      supabase.from('device_commands').select('*').order('created_at', { ascending: false }).limit(200),
     ]);
     if (orgsR.data) setOrgs(orgsR.data as Organization[]);
     if (devsR.data) setDevices(devsR.data as Device[]);
@@ -309,6 +318,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     if (srdR.data) setSmsRecipientDevices(srdR.data as SmsRecipientDevice[]);
     if (eadR.data) setEmailAlarmDevices(eadR.data as EmailAlarmDevice[]);
     if (rsubR.data) setReportSubs(rsubR.data as ReportSubscription[]);
+    if (dcR.data) setDeviceCommands(dcR.data as DeviceCommand[]);
   }, []);
   const live = isSupabaseConfigured;
   const sb = () => getSupabase()!;
@@ -466,6 +476,43 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       else refresh();
     });
   }, [live, refresh]);
+
+  // ----- Remote calibration -----
+  // Queue one console command for a device. Live mode goes through the
+  // queue_device_command RPC (enforces role + the v1 allowlist in the DB); the
+  // EC2 bridge delivers it over MQTT/RS485 and writes the answer back. Demo mode
+  // simulates the full round-trip so the UI can be exercised without hardware.
+  const queueDeviceCommand = useCallback(async (deviceId: string, cmd: string): Promise<{ ok: boolean; id?: string; error?: string }> => {
+    const line = cmd.trim();
+    if (!line) return { ok: false, error: 'Empty command.' };
+
+    if (live) {
+      const { data, error } = await sb().rpc('queue_device_command', { target_device: deviceId, cmd: line });
+      if (error) return { ok: false, error: error.message };
+      refresh();
+      return { ok: true, id: data as string };
+    }
+
+    // Demo: insert a queued row, then simulate sent → acked with a plausible answer.
+    const id = `cmd-${seq()}`;
+    const dev = devRef.current.find((d) => d.id === deviceId);
+    const kind = /^set\b/i.test(line) ? 'write' : 'read';
+    const row: DeviceCommand = {
+      id, device_id: deviceId, organization_id: dev?.organization_id ?? '', command: line,
+      kind, status: 'queued', response: null, issued_by: userRef.current.id,
+      issued_role: userRef.current.role, created_at: new Date().toISOString(), sent_at: null, acked_at: null,
+    };
+    setDeviceCommands((p) => [row, ...p]);
+    setTimeout(() => setDeviceCommands((p) => p.map((c) => (c.id === id ? { ...c, status: 'sent', sent_at: new Date().toISOString() } : c))), 600);
+    setTimeout(() => {
+      const { ok, response } = demoDeviceAnswer(deviceId, line);
+      setDeviceCommands((p) => p.map((c) => (c.id === id ? { ...c, status: ok ? 'acked' : 'error', response, acked_at: new Date().toISOString() } : c)));
+    }, 1600);
+    return { ok: true, id };
+  }, [live, refresh]);
+
+  const getDeviceCommands = useCallback((deviceId: string) =>
+    cmdRef.current.filter((c) => c.device_id === deviceId), []);
 
   // ----- Devices -----
   const addDevice = useCallback((data: { name: string; organization_id: string; location?: string; latitude?: number | null; longitude?: number | null; system_id?: string; sim_number?: string }) => {
@@ -643,6 +690,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     myAlarmEmailEnabled, setMyAlarmEmail,
     myAlarmEmailAllDevices, myEmailDeviceIds, setMyAlarmEmailAllDevices, setMyEmailDevices,
     myReportDeviceIds, setMyReportDevices,
+    deviceCommands, queueDeviceCommand, getDeviceCommands,
     smsSettings, smsRecipients, smsTemplates, smsRecipientDevices,
     requestOrgSms, reviewOrgSms, addSmsRecipient, updateSmsRecipient, deleteSmsRecipient, assignSmsRecipientDevices, upsertSmsTemplate,
     getOrgDevices, getDeviceTelemetry, getDeviceHistory, exportDeviceTelemetry, getLatestTelemetry, getDeviceAlarms,

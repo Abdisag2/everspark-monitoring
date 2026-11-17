@@ -1,5 +1,6 @@
 import {
   LayoutDashboard, Building2, Cpu, Users, Radio, Settings, UserPlus, MonitorDot, Bell, FileBarChart2,
+  SlidersHorizontal,
   type LucideIcon,
 } from 'lucide-react';
 import type { PanelView, UserRole } from './types';
@@ -30,6 +31,7 @@ export const NAV_BY_ROLE: Record<UserRole, NavSection[]> = {
         { view: 'organizations', label: 'Organizations', icon: Building2, desc: 'Client enterprises' },
         { view: 'devices',       label: 'Devices',       icon: Cpu,       desc: 'Hardware registry & tokens' },
         { view: 'members',       label: 'Members',       icon: Users,     desc: 'All platform accounts' },
+        { view: 'calibration',   label: 'Calibration',   icon: SlidersHorizontal, desc: 'Remote device settings' },
       ],
     },
     {
@@ -58,6 +60,7 @@ export const NAV_BY_ROLE: Record<UserRole, NavSection[]> = {
       items: [
         { view: 'devices',      label: 'Devices',      icon: Cpu,      desc: 'Your org hardware' },
         { view: 'team',         label: 'Team',         icon: UserPlus, desc: 'Members & access' },
+        { view: 'calibration',  label: 'Calibration',  icon: SlidersHorizontal, desc: 'Remote device settings' },
         { view: 'org-settings', label: 'Organization', icon: Settings, desc: 'Org details' },
       ],
     },
