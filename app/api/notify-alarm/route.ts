@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseAdmin } from '@/lib/supabase';
 import { SESv2Client, SendEmailCommand } from '@aws-sdk/client-sesv2';
-import { SNSClient, PublishCommand } from '@aws-sdk/client-sns';
+import { sendSmsEthiopia } from '@/lib/sms';
 
 export const runtime = 'nodejs'; // AWS SDK needs the Node runtime, not Edge
 
@@ -147,29 +147,11 @@ You get this because device-alarm emails are on for your account. Turn them off 
       if (nums.length && !templateDisabled) {
         const raw = tmpl?.message || 'Ever Spark alert: {alarm} on {device} ({detail}) at {time}';
         const msg = renderTemplate(raw, { alarm: label, device: device.name, detail: alarm.message, time: when });
-        const sns = new SNSClient({
-          region: process.env.SNS_REGION || process.env.SES_REGION || 'eu-central-1',
-          credentials: {
-            accessKeyId: process.env.SES_ACCESS_KEY_ID || '',
-            secretAccessKey: process.env.SES_SECRET_ACCESS_KEY || '',
-          },
-        });
         for (const n of nums) {
-          try {
-            await sns.send(new PublishCommand({
-              PhoneNumber: n.phone_e164,
-              Message: msg,
-              MessageAttributes: {
-                'AWS.SNS.SMS.SMSType': { DataType: 'String', StringValue: 'Transactional' },
-                // Pin the registered Sender ID so Ethiopia (+251) accepts delivery.
-                'AWS.SNS.SMS.SenderID': { DataType: 'String', StringValue: process.env.SMS_SENDER_ID || 'EVERSPARK' },
-              },
-            }));
-            sms++;
-          } catch (e: any) {
-            console.error('[everspark] alarm SMS failed for', n.phone_e164, '-', e?.message);
-            smsErrors.push(`${n.phone_e164}: ${e?.name || ''} ${e?.message || e}`.trim());
-          }
+          const r = await sendSmsEthiopia(n.phone_e164, msg);
+          if (r.ok) { sms++; continue; }
+          console.error('[everspark] alarm SMS failed for', n.phone_e164, '-', r.error);
+          smsErrors.push(`${n.phone_e164}: ${r.error}`);
         }
       }
     }
