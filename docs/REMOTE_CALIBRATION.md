@@ -6,26 +6,25 @@ parameters.** Dosing / chlorine calibration (target_frc, pump & flow-meter cal) 
 deferred to a later, extra-guarded phase.
 
 ```
- Dashboard (Vercel)           Supabase                 EC2 bridge              Site gateway            Clara main board
- ─────────────────            ────────                 ──────────              ────────────            ───────────────
- operator clicks  ──RPC──▶  device_commands                                                             (REMOTE mode,
- "Read config" /            row: status=queued                                                           RS485 RX on)
- "Save"                           │                                                                          ▲
-                                  │  claim queued  ──────────▶ publish MQTT  ──────────▶ write "<cmd>\n"  ──┘
-                                  │  (status=sent)         everspark/<token>/cmd         to RS485
-                                  │                                                           │
-                                  │                                                      read answer line
-                                  │                                                      (does NOT start ';')
-                                  ◀── write response ◀──────── recv MQTT   ◀───────────── publish answer ◀──┘
-                                     (status=acked/error)   everspark/<token>/cmd/ack
- UI polls the row  ◀──────────────┘
+ Dashboard (Vercel)         Supabase            EC2 bridge           USR-G771 (transparent)     Clara main board
+ ─────────────────          ────────            ──────────           ──────────────────────     ───────────────
+ operator clicks  ─RPC─▶  device_commands                                                        (REMOTE mode,
+ "Read config"/"Save"     row: queued                                                             RS485 RX on)
+                               │  publish "set …\n"  ─────────▶  subscribe .../cmd ─▶ RS485 TX  ──▶ executes
+                               │  everspark/<token>/cmd          (writes bytes verbatim)             │
+                               │  (row: sent)                                                   RS485 TX answer
+                               │                                                                     │
+                               ◀─ non-';' line = answer ◀── everspark/<token> ◀── RS485 RX ◀────────┘
+                                  (row: acked/error)        (modem republishes serial)
+ UI polls the row ◀────────────┘
  and shows the answer
 ```
 
-The dashboard never touches MQTT. It only calls the `queue_device_command` RPC and
-reads the row back. Everything between Supabase and the RS485 bus is the **EC2
-bridge** (which already moves telemetry MQTT → Supabase) plus the **site gateway**
-firmware (the unit on the other end of Clara's RS485 line).
+The dashboard never touches MQTT — it calls the `queue_device_command` RPC and reads
+the row back. The **EC2 bridge** (`command-bridge.js`) does the rest. The site gateway
+is a **transparent USR-G771**: it has no logic, it just copies MQTT⇄RS485 both ways,
+so the bridge speaks Clara's console protocol directly and reads the answer off the
+same telemetry topic the modem already publishes on.
 
 ---
 
@@ -35,7 +34,7 @@ firmware (the unit on the other end of Clara's RS485 line).
 
 | column | meaning |
 |---|---|
-| `id` | uuid, the command id used on MQTT |
+| `id` | uuid, primary key / audit id |
 | `device_id`, `organization_id` | target device + its org |
 | `command` | the exact console line, e.g. `set report_interval 60` |
 | `kind` | `read` or `write` |
@@ -53,67 +52,75 @@ uses the **service-role key** (bypasses RLS) for everything below.
 
 This is implemented in **`hardware-ingest/command-bridge.js`** (zero deps beyond
 `mqtt`, same style as `mqtt-subscriber.js`) — run it on the EC2 VM alongside the
-telemetry subscriber. It:
+telemetry subscriber, which it leaves untouched. It:
 
 1. Polls `device_commands where status='queued'`, resolves each device's
-   `secret_token`, publishes to the command topic (below), and marks the row
-   `sent`. One command in flight per device (Clara answers one line at a time).
-2. Subscribes to the ack topic; on a message, matches by `id`, writes `response`,
-   and sets `status` — `acked` when the gateway reports `ok` (or the text starts
-   with `ok`), otherwise `error`.
+   `secret_token`, and publishes the **bare command line + `\n`** to
+   `everspark/<token>/cmd`, then marks the row `sent`. One command in flight per
+   device (Clara answers one line at a time).
+2. Subscribes to the telemetry topic `everspark/+` and reads the **non-`;` lines**
+   (the `;…:` frames stay the subscriber's job). While a device has a command in
+   flight, it accumulates that device's non-`;` text as the answer and finalizes it
+   when the line goes quiet (`ANSWER_IDLE_MS`, default 2.5 s) or the next telemetry
+   frame arrives — writing `response` and `status` (`error` if the answer starts
+   with `error`/`busy` or is empty, else `acked`).
 3. Sweeps rows stuck in `sent` past `CMD_TIMEOUT_MS` (default 90 s) to `timeout`.
 
 Env (reuses the telemetry subscriber's, plus a few): `SUPABASE_URL`,
 `SUPABASE_SERVICE_ROLE_KEY`, `MQTT_URL`, `MQTT_USERNAME`/`MQTT_PASSWORD`,
 `CMD_TOPIC_PREFIX` (default `everspark`), `CMD_POLL_MS` (2500), `CMD_TIMEOUT_MS`
-(90000). Deploy as a systemd service (e.g. `everspark-cmd`) next to
-`everspark-ingest` / `everspark-mqtt`.
+(90000), `ANSWER_IDLE_MS` (2500). Deploy as a systemd service (`everspark-cmd`) next
+to `everspark-ingest` / `everspark-mqtt`.
 
 ---
 
 ## 3. MQTT topics & payloads
 
 Keyed on the device's `secret_token` — the same identifier the telemetry topic
-`everspark/<secret_token>` already uses. The command topics hang off it:
+`everspark/<secret_token>` already uses.
 
-**Downlink** — bridge → gateway, topic `everspark/<secret_token>/cmd`, QoS 1:
-```json
-{ "id": "7b3f…uuid", "line": "set report_interval 60" }
+**Downlink** — bridge → modem, topic `everspark/<secret_token>/cmd`, QoS 1. Payload
+is the **raw console line plus a newline**, nothing else (the transparent modem
+writes these exact bytes to RS485):
+```
+set report_interval 60\n
 ```
 
-**Uplink** — gateway → bridge, topic `everspark/<secret_token>/cmd/ack`, QoS 1:
-```json
-{ "id": "7b3f…uuid", "response": "ok - 4  report_interval = 60 s  [5 .. 3600]  Ecophi report period", "ok": true }
+**Uplink** — there is **no dedicated ack topic**. Clara's answer leaves on RS485 and
+the modem republishes it on its normal publish topic `everspark/<secret_token>`, as
+one or more lines that do **not** start with `;`. The bridge reads them there:
 ```
-`ok` is optional — the bridge infers it from the text when absent. Echo back the
-same `id` so retries/duplicates map to one row. (Change the `everspark` root only if
-your broker uses a different one — set `CMD_TOPIC_PREFIX` to match.)
+ok - 4  report_interval = 60 s  [5 .. 3600]  Ecophi report period
+```
+Because only one command is in flight per device, that text is unambiguously the
+answer. (Change the `everspark` root only if your broker uses a different one — set
+`CMD_TOPIC_PREFIX` to match.)
 
 ---
 
-## 4. Site gateway responsibilities (the RS485 end)
+## 4. USR-G771 modem configuration (one-time, per modem)
 
-The gateway is the unit on the other side of Clara's RS485 line. For each downlink
-message:
+The modem already **publishes** Clara's serial output to `everspark/<token>`. Add a
+**subscribe** topic so downlink commands reach the serial port — in transparent/MQTT
+mode, set the subscribe topic to `everspark/<token>/cmd` (its payload is written to
+RS485 verbatim). Keep 115200 baud and the existing publish topic. No other change.
 
-1. **Make sure Clara is listening.** Clara only accepts RS485 commands in REMOTE
-   mode. A deployed unit with nobody on USB enters REMOTE automatically ~2 min after
-   boot and stays there. (Firmware param `remote_cal=1`; `remote_cal=0` disables it —
-   which is why the app refuses to set that param.)
-2. **Respect half-duplex.** RS485 is one wire pair. Only transmit when Clara is not
-   transmitting — send between telemetry frames, and don't talk over an answer.
-3. **Send** `line` followed by `\n`.
-4. **Read the answer.** Clara's console reply is one or more text lines that **never
-   start with `;`** (telemetry frames always start with `;` and end with `:`). Collect
-   the non-`;` line(s) that follow your command until the line goes idle (~0.3 s is
-   typical; some commands like `pumpcal` stream progress — not in v1). Join them into
-   `response`.
-5. **Publish** the ack. If Clara answered `busy`, publish that verbatim (EC2 retries).
-   If nothing came back, either publish nothing (EC2's timeout handles it) or an
-   `{"id":…, "ok":false, "response":"no answer"}`.
+Then it just works, given two field conditions:
 
-> Unknown lines and bus noise get no answer from Clara by design, so a dropped or
-> garbled command simply times out — it never half-applies.
+1. **Clara must be in REMOTE mode** to accept RS485 commands. A deployed unit with
+   nobody on USB enters REMOTE automatically ~2 min after boot and stays there
+   (`remote_cal=1`; `remote_cal=0` disables it — which is why the app refuses to set
+   that param). If a technician opens the USB console on site, remote commands pause
+   until the USB session goes idle (`usb_idle_min`).
+2. **Half-duplex timing.** RS485 is one pair; a command and a telemetry frame must
+   not overlap. Commands are rare and Clara's frames are brief, so a clash is
+   unlikely — and if one is garbled, Clara simply ignores it (unknown lines get no
+   answer) and the bridge times the command out. It never half-applies.
+
+> Multi-line answers (e.g. `get`, ~16 lines) may arrive as one or a few MQTT
+> messages depending on the modem's serial-packing time. The bridge stitches them
+> back together, so set a generous packing time (e.g. 100–500 ms) if `get` answers
+> arrive split.
 
 ---
 
