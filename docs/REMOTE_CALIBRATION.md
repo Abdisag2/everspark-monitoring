@@ -12,12 +12,12 @@ deferred to a later, extra-guarded phase.
  "Read config" /            row: status=queued                                                           RS485 RX on)
  "Save"                           │                                                                          ▲
                                   │  claim queued  ──────────▶ publish MQTT  ──────────▶ write "<cmd>\n"  ──┘
-                                  │  (status=sent)             clara/<token>/cmd         to RS485
+                                  │  (status=sent)         everspark/<token>/cmd         to RS485
                                   │                                                           │
                                   │                                                      read answer line
                                   │                                                      (does NOT start ';')
                                   ◀── write response ◀──────── recv MQTT   ◀───────────── publish answer ◀──┘
-                                     (status=acked/error)      clara/<token>/cmd/ack
+                                     (status=acked/error)   everspark/<token>/cmd/ack
  UI polls the row  ◀──────────────┘
  and shows the answer
 ```
@@ -51,47 +51,43 @@ uses the **service-role key** (bypasses RLS) for everything below.
 
 ## 2. EC2 bridge responsibilities
 
-Add to the existing EC2 service (same box, same Supabase service-role client and
-MQTT client already used for telemetry):
+This is implemented in **`hardware-ingest/command-bridge.js`** (zero deps beyond
+`mqtt`, same style as `mqtt-subscriber.js`) — run it on the EC2 VM alongside the
+telemetry subscriber. It:
 
-**Downlink — send queued commands**
-1. Find work: either Supabase Realtime on `device_commands` INSERT, or poll
-   `select * from device_commands where status='queued' order by created_at limit N`.
-2. For each, look up the device's `secret_token`, then publish to the device's
-   command topic (below). Set `status='sent'`, `sent_at=now()`.
-3. Keep one command in flight per device (Clara answers one line at a time and
-   replies `busy` to a second). Hold the next `queued` row for that device until the
-   current one is `acked`/`error`/`timeout`.
+1. Polls `device_commands where status='queued'`, resolves each device's
+   `secret_token`, publishes to the command topic (below), and marks the row
+   `sent`. One command in flight per device (Clara answers one line at a time).
+2. Subscribes to the ack topic; on a message, matches by `id`, writes `response`,
+   and sets `status` — `acked` when the gateway reports `ok` (or the text starts
+   with `ok`), otherwise `error`.
+3. Sweeps rows stuck in `sent` past `CMD_TIMEOUT_MS` (default 90 s) to `timeout`.
 
-**Uplink — record answers**
-4. Subscribe to the ack topic. On a message, match by `id`, write `response`, set
-   `status` from the answer: starts with `ok` → `acked`; `busy` → leave `sent` and
-   retry a few seconds later; anything else (incl. `error - ...`) → `error`.
-   Set `acked_at=now()`.
-
-**Timeout sweep**
-5. Any row `sent` with no answer after e.g. 90 s → `status='timeout'`,
-   `response='no answer from device'`. (Clara only listens in REMOTE mode — see §4.)
+Env (reuses the telemetry subscriber's, plus a few): `SUPABASE_URL`,
+`SUPABASE_SERVICE_ROLE_KEY`, `MQTT_URL`, `MQTT_USERNAME`/`MQTT_PASSWORD`,
+`CMD_TOPIC_PREFIX` (default `everspark`), `CMD_POLL_MS` (2500), `CMD_TIMEOUT_MS`
+(90000). Deploy as a systemd service (e.g. `everspark-cmd`) next to
+`everspark-ingest` / `everspark-mqtt`.
 
 ---
 
 ## 3. MQTT topics & payloads
 
-Key the topics on the device's `secret_token` (the same identifier the HTTP ingest
-uses). **Mirror whatever topic scheme the gateway already uses for telemetry** — the
-names below are the contract, adjust the prefix to match your broker.
+Keyed on the device's `secret_token` — the same identifier the telemetry topic
+`everspark/<secret_token>` already uses. The command topics hang off it:
 
-**Downlink** — EC2 → gateway, topic `clara/<secret_token>/cmd`, QoS 1:
+**Downlink** — bridge → gateway, topic `everspark/<secret_token>/cmd`, QoS 1:
 ```json
 { "id": "7b3f…uuid", "line": "set report_interval 60" }
 ```
 
-**Uplink** — gateway → EC2, topic `clara/<secret_token>/cmd/ack`, QoS 1:
+**Uplink** — gateway → bridge, topic `everspark/<secret_token>/cmd/ack`, QoS 1:
 ```json
 { "id": "7b3f…uuid", "response": "ok - 4  report_interval = 60 s  [5 .. 3600]  Ecophi report period", "ok": true }
 ```
-`ok` is a convenience; EC2 can also derive it from the text. Echo back the same `id`
-so retries/duplicates map to one row.
+`ok` is optional — the bridge infers it from the text when absent. Echo back the
+same `id` so retries/duplicates map to one row. (Change the `everspark` root only if
+your broker uses a different one — set `CMD_TOPIC_PREFIX` to match.)
 
 ---
 
