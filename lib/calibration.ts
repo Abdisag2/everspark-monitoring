@@ -46,12 +46,30 @@ export const MAIN_PARAMS: MainParamMeta[] = [
   { index: 15, name: 'usb_idle_min',    label: 'USB idle timeout',  unit: 'min', settable: true,  demo: 10,     min: 1,   max: 240,  help: 'Back to RS485 after this long without USB input' },
 ];
 
-/** Dosing-board params shown read-only in v1 (chlorine-related; writes deferred). */
+/**
+ * Dosing-board params (chlorine target + pump/flow calibration), from the Clara
+ * firmware table. Admin-editable over the remote link via `dosing set`; the dosing
+ * board validates each value's range and rejects an out-of-range set. The live
+ * `dosing get` dump is the source of truth for current values/ranges; this supplies
+ * labels and the demo defaults.
+ */
 export interface DosingParamMeta { name: string; label: string; unit: string; demo: number; min: number; max: number; help: string; }
-export const DOSING_READ_PARAMS: DosingParamMeta[] = [
-  { name: 'target_frc',     label: 'Target chlorine (FRC)', unit: 'mg/L', demo: 1.8,   min: 0.1, max: 10,  help: 'Free residual chlorine to add to the water' },
-  { name: 'naclo_strength', label: 'NaClO strength',        unit: '%',    demo: 0.8,   min: 0.1, max: 15,  help: 'Concentration of the produced hypochlorite' },
-  { name: 'ml_per_rev',     label: 'Pump mL / rev',         unit: 'mL',   demo: 3.65,  min: 0.1, max: 50,  help: 'Dosing-pump calibration' },
+export const DOSING_PARAMS: DosingParamMeta[] = [
+  { name: 'target_frc',       label: 'Target chlorine (FRC)', unit: 'mg/L',       demo: 1.5,    min: 0.1,  max: 10,    help: 'Chlorine to add to the water' },
+  { name: 'naclo_strength',   label: 'NaClO strength',        unit: 'g/L',        demo: 4.5,    min: 0.5,  max: 60,    help: 'Strength of the produced NaClO' },
+  { name: 'dose_interval',    label: 'Dosing interval',       unit: 's',          demo: 20,     min: 5,    max: 300,   help: 'Dosing control period' },
+  { name: 'steps_per_rev',    label: 'Pump steps / rev',      unit: 'steps',      demo: 6400,   min: 200,  max: 51200, help: 'Driver microsteps per revolution' },
+  { name: 'ml_per_rev',       label: 'Pump mL / rev',         unit: 'mL',         demo: 1.2,    min: 0.01, max: 50,    help: 'Pump output per rev (set via pumpcal on site)' },
+  { name: 'flow_k',           label: 'Flowmeter K-factor',    unit: 'Hz/(L/min)', demo: 0.5,    min: 0.01, max: 100,   help: 'Flowmeter Hz per L/min (set via flowcal on site)' },
+  { name: 'flow_corr_min',    label: 'Flow-correction threshold', unit: 'L/min',  demo: 5,      min: 0,    max: 2000,  help: 'Apply correction above this flow' },
+  { name: 'flow_corr_gain',   label: 'Flow-correction gain',  unit: '',           demo: 1.02,   min: 0.1,  max: 10,    help: 'Q = gain · Qraw + offset' },
+  { name: 'flow_corr_offset', label: 'Flow-correction offset', unit: 'L/min',     demo: 8.61,   min: -100, max: 100,   help: 'Q = gain · Qraw + offset' },
+  { name: 'coef_low',         label: 'Dose coefficient (low flow)',  unit: '',    demo: 1.45,   min: 0,    max: 5,     help: 'Dose multiplier when flow ≤ band' },
+  { name: 'coef_high',        label: 'Dose coefficient (high flow)', unit: '',    demo: 1.35,   min: 0,    max: 5,     help: 'Dose multiplier when flow > band' },
+  { name: 'coef_band',        label: 'Flow band',             unit: 'L/min',      demo: 60,     min: 0,    max: 5000,  help: 'Flow separating the two multipliers' },
+  { name: 'max_step_rate',    label: 'Max pump rate',         unit: 'steps/s',    demo: 10000,  min: 100,  max: 15000, help: 'Pump speed limit' },
+  { name: 'test_step_rate',   label: 'Test pump rate',        unit: 'steps/s',    demo: 3200,   min: 100,  max: 15000, help: 'Pump speed for dose / pumpcal' },
+  { name: 'flow_meter',       label: 'Flow meter size',       unit: 'inch',       demo: 3,      min: 0,    max: 3,     help: '2 = 2in DN50, 3 = 3in DN80, 0 = other' },
 ];
 
 export interface ParsedParam { name: string; value: number; unit: string; min?: number; max?: number; help?: string; }
@@ -89,7 +107,7 @@ function demoValues(deviceId: string): Record<string, number> {
   if (!demoStore[deviceId]) {
     const seed: Record<string, number> = {};
     for (const p of MAIN_PARAMS) seed[p.name] = p.demo;
-    for (const p of DOSING_READ_PARAMS) seed[p.name] = p.demo;
+    for (const p of DOSING_PARAMS) seed[p.name] = p.demo;
     demoStore[deviceId] = seed;
   }
   return demoStore[deviceId];
@@ -106,7 +124,15 @@ export function demoDeviceAnswer(deviceId: string, cmd: string): { ok: boolean; 
     return { ok: true, response: MAIN_PARAMS.map((p) => dumpLine(p, vals[p.name], p.index)).join('\n') };
   }
   if (low === 'dosing get') {
-    return { ok: true, response: DOSING_READ_PARAMS.map((p, i) => dumpLine(p, vals[p.name], i)).join('\n') };
+    return { ok: true, response: DOSING_PARAMS.map((p, i) => dumpLine(p, vals[p.name], i)).join('\n') };
+  }
+  if (tok[0].toLowerCase() === 'dosing' && (tok[1] || '').toLowerCase() === 'set' && tok[2] && tok[3] != null) {
+    const p = DOSING_PARAMS.find((x) => x.name === tok[2].toLowerCase());
+    if (!p) return { ok: false, response: `error - unknown parameter ${tok[2]}` };
+    const v = Number(tok[3]);
+    if (!Number.isFinite(v) || v < p.min || v > p.max) return { ok: false, response: `error - ${p.name} out of range [${fmt(p.min)} .. ${fmt(p.max)}]` };
+    vals[p.name] = v;
+    return { ok: true, response: `ok - dosing board saved: ${dumpLine(p, v)}` };
   }
   if (tok[0].toLowerCase() === 'get' && tok[1]) {
     const p = MAIN_PARAMS.find((x) => x.name === tok[1].toLowerCase());
