@@ -1,4 +1,4 @@
-import type { Device, TelemetryRecord } from './types';
+import type { Device, TelemetryRecord, ReportFrequency } from './types';
 
 /**
  * Shared monthly-report engine.
@@ -178,4 +178,81 @@ export function windowLabel(fromMs: number, toMs: number): string {
 /** Safe filename stem for a device + period. */
 export function reportSlug(systemIdOrId: string, periodLabel: string): string {
   return `${systemIdOrId}_${periodLabel}`.replace(/[^\w.-]+/g, '_');
+}
+
+// ============================================================================
+// Scheduled-report cadence
+// ============================================================================
+
+/** Options for the "Email me a report" cadence selector (order = UI order). */
+export const REPORT_FREQUENCIES: { value: ReportFrequency; label: string }[] = [
+  { value: 'daily',      label: 'Daily' },
+  { value: 'weekly',     label: 'Weekly' },
+  { value: 'monthly',    label: 'Monthly' },
+  { value: 'quarterly',  label: 'Quarterly' },
+  { value: 'semiannual', label: 'Semi-annually' },
+  { value: 'yearly',     label: 'Yearly' },
+];
+
+/** Title-case noun for emails / PDF titles, e.g. "Quarterly". */
+export const FREQ_NOUN: Record<ReportFrequency, string> = {
+  daily: 'Daily', weekly: 'Weekly', monthly: 'Monthly',
+  quarterly: 'Quarterly', semiannual: 'Semi-annual', yearly: 'Annual',
+};
+
+const DAY_MS = 86_400_000;
+const sh = (m: number) => MONTHS[m].slice(0, 3);
+
+/** A cadence-aware label for a [from,to) window, e.g. "Q3 2026", "H1 2026", "2026". */
+export function periodLabelFor(freq: ReportFrequency, fromMs: number, toMs: number): string {
+  const f = new Date(fromMs);
+  const y = f.getUTCFullYear(), mo = f.getUTCMonth(), d = f.getUTCDate();
+  switch (freq) {
+    case 'daily':      return `${d} ${sh(mo)} ${y}`;
+    case 'weekly': {
+      const t = new Date(toMs - DAY_MS);
+      return `week of ${d} ${sh(mo)} – ${t.getUTCDate()} ${sh(t.getUTCMonth())} ${t.getUTCFullYear()}`;
+    }
+    case 'monthly':    return `${MONTHS[mo]} ${y}`;
+    case 'quarterly':  return `Q${Math.floor(mo / 3) + 1} ${y}`;
+    case 'semiannual': return `${mo === 0 ? 'H1' : 'H2'} ${y}`;
+    case 'yearly':     return `${y}`;
+  }
+}
+
+/**
+ * The reporting window for a cadence IF a run on `ref` (UTC) should send it, else
+ * null. Reports go out on calendar boundaries: daily every day (prior day), weekly
+ * on Mondays (prior 7 days), monthly/quarterly/semiannual/yearly on the 1st of the
+ * period that just closed. `periodStart` (YYYY-MM-DD) is the idempotency key.
+ */
+export function dueWindow(
+  freq: ReportFrequency, ref: Date = new Date(),
+): { fromMs: number; toMs: number; label: string; periodStart: string } | null {
+  const y = ref.getUTCFullYear(), mo = ref.getUTCMonth(), day = ref.getUTCDate();
+  const startOfToday = Date.UTC(y, mo, day);
+  const mk = (fromMs: number, toMs: number) => ({
+    fromMs, toMs, label: periodLabelFor(freq, fromMs, toMs),
+    periodStart: new Date(fromMs).toISOString().slice(0, 10),
+  });
+
+  switch (freq) {
+    case 'daily':
+      return mk(startOfToday - DAY_MS, startOfToday);
+    case 'weekly':
+      if (ref.getUTCDay() !== 1) return null;              // Mondays
+      return mk(startOfToday - 7 * DAY_MS, startOfToday);
+    case 'monthly':
+      if (day !== 1) return null;
+      return mk(Date.UTC(y, mo - 1, 1), Date.UTC(y, mo, 1));
+    case 'quarterly':
+      if (day !== 1 || mo % 3 !== 0) return null;          // 1 Jan/Apr/Jul/Oct
+      return mk(Date.UTC(y, mo - 3, 1), Date.UTC(y, mo, 1));
+    case 'semiannual':
+      if (day !== 1 || mo % 6 !== 0) return null;          // 1 Jan/Jul
+      return mk(Date.UTC(y, mo - 6, 1), Date.UTC(y, mo, 1));
+    case 'yearly':
+      if (day !== 1 || mo !== 0) return null;              // 1 Jan
+      return mk(Date.UTC(y - 1, 0, 1), Date.UTC(y, 0, 1));
+  }
 }

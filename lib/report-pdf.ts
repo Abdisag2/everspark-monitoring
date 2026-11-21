@@ -1,5 +1,6 @@
 import type { ReportModel } from './report';
 import { metricRows } from './report';
+import type { ReportFrequency } from './types';
 
 /**
  * Branded EverSpark report PDF, rendered with jsPDF so the SAME code runs in the
@@ -18,9 +19,15 @@ const MUTE: [number, number, number] = [148, 163, 184];   // slate-400
 const TILE_BG: [number, number, number] = [239, 253, 251]; // brand-50 #effdfb
 const BORDER: [number, number, number] = [203, 213, 225];  // slate-300
 
+const PDF_TITLES: Record<string, string> = {
+  monthly: 'MONTHLY REPORT', custom: 'SYSTEM REPORT',
+  daily: 'DAILY REPORT', weekly: 'WEEKLY REPORT', quarterly: 'QUARTERLY REPORT',
+  semiannual: 'SEMI-ANNUAL REPORT', yearly: 'ANNUAL REPORT',
+};
+
 export async function renderReportPdf(
   model: ReportModel,
-  kind: 'monthly' | 'custom' = 'monthly',
+  kind: 'monthly' | 'custom' | ReportFrequency = 'monthly',
 ): Promise<Uint8Array> {
   const { jsPDF } = await import('jspdf');
   const doc = new jsPDF({ unit: 'pt', format: 'a4' });
@@ -46,7 +53,7 @@ export async function renderReportPdf(
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(12);
   doc.setTextColor(255, 255, 255);
-  const title = kind === 'monthly' ? 'MONTHLY REPORT' : 'SYSTEM REPORT';
+  const title = PDF_TITLES[kind] ?? 'SYSTEM REPORT';
   doc.text(title, W - M, 44, { align: 'right' });
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(10);

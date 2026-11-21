@@ -43,7 +43,7 @@ export const NAV_BY_ROLE: Record<UserRole, NavSection[]> = {
     {
       heading: 'Account',
       items: [
-        { view: 'reports',       label: 'Reports',       icon: FileBarChart2, desc: 'Monthly & on-demand reports' },
+        { view: 'reports',       label: 'Reports',       icon: FileBarChart2, desc: 'Scheduled & on-demand reports' },
         { view: 'notifications', label: 'Notifications', icon: Bell,          desc: 'Your alarm emails' },
       ],
     },
@@ -67,7 +67,7 @@ export const NAV_BY_ROLE: Record<UserRole, NavSection[]> = {
     {
       heading: 'Account',
       items: [
-        { view: 'reports',       label: 'Reports',       icon: FileBarChart2, desc: 'Monthly & on-demand reports' },
+        { view: 'reports',       label: 'Reports',       icon: FileBarChart2, desc: 'Scheduled & on-demand reports' },
         { view: 'notifications', label: 'Notifications', icon: Bell,          desc: 'Your alarm emails' },
       ],
     },
@@ -82,7 +82,7 @@ export const NAV_BY_ROLE: Record<UserRole, NavSection[]> = {
     {
       heading: 'Account',
       items: [
-        { view: 'reports',       label: 'Reports',       icon: FileBarChart2, desc: 'Monthly & on-demand reports' },
+        { view: 'reports',       label: 'Reports',       icon: FileBarChart2, desc: 'Scheduled & on-demand reports' },
         { view: 'notifications', label: 'Notifications', icon: Bell,          desc: 'Your alarm emails' },
       ],
     },

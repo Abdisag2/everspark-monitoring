@@ -5,7 +5,7 @@ import type {
   Organization, Profile, Device, TelemetryRecord, AlarmRecord,
   AppUser, UserRole, SimPacket, PanelState,
   OrgSmsSettings, SmsRecipient, SmsTemplate, AlarmType,
-  SmsRecipientDevice, EmailAlarmDevice, ReportSubscription, DeviceCommand,
+  SmsRecipientDevice, EmailAlarmDevice, ReportSubscription, ReportFrequency, DeviceCommand,
 } from '@/lib/types';
 import { demoDeviceAnswer } from '@/lib/calibration';
 import {
@@ -95,9 +95,9 @@ interface Ctx {
   setMyAlarmEmailAllDevices: (all: boolean) => void;
   setMyEmailDevices: (deviceIds: string[]) => void;
 
-  // Per-user monthly-report subscriptions (CSV + PDF emailed at month end)
-  myReportDeviceIds: string[];                  // devices I subscribed to a monthly report for
-  setMyReportDevices: (deviceIds: string[]) => void;
+  // Per-user scheduled-report subscriptions (CSV + PDF emailed at a chosen cadence)
+  myReportSubs: Record<string, ReportFrequency>;   // deviceId → cadence (absent = not subscribed)
+  setMyReportFrequency: (deviceId: string, frequency: ReportFrequency | null) => void;
 
   // Remote calibration: command queue + enqueue (round-trips via EC2 + RS485)
   deviceCommands: DeviceCommand[];
@@ -468,13 +468,22 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     });
   }, [live, refresh]);
 
-  const setMyReportDevices = useCallback((deviceIds: string[]) => {
+  // Set (or clear, with frequency=null) the scheduled-report cadence for one device.
+  const setMyReportFrequency = useCallback((deviceId: string, frequency: ReportFrequency | null) => {
     const myId = authUserRef.current?.id ?? userRef.current.id;
-    setReportSubs((p) => [...p.filter((x) => x.user_id !== myId), ...deviceIds.map((d) => ({ user_id: myId, device_id: d }))]);
-    if (live) sb().from('report_subscriptions').delete().eq('user_id', myId).then(() => {
-      if (deviceIds.length) sb().from('report_subscriptions').insert(deviceIds.map((d) => ({ user_id: myId, device_id: d }))).then(() => refresh());
-      else refresh();
+    setReportSubs((p) => {
+      const without = p.filter((x) => !(x.user_id === myId && x.device_id === deviceId));
+      return frequency ? [...without, { user_id: myId, device_id: deviceId, frequency }] : without;
     });
+    if (live) {
+      if (frequency) {
+        sb().from('report_subscriptions')
+          .upsert({ user_id: myId, device_id: deviceId, frequency }, { onConflict: 'user_id,device_id' })
+          .then(() => refresh());
+      } else {
+        sb().from('report_subscriptions').delete().eq('user_id', myId).eq('device_id', deviceId).then(() => refresh());
+      }
+    }
   }, [live, refresh]);
 
   // ----- Remote calibration -----
@@ -674,7 +683,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const myAlarmEmailEnabled = !!myProfileForPrefs?.alarm_email_enabled;
   const myAlarmEmailAllDevices = myProfileForPrefs?.alarm_email_all_devices ?? true;
   const myEmailDeviceIds = emailAlarmDevices.filter((e) => e.user_id === myPrefId).map((e) => e.device_id);
-  const myReportDeviceIds = reportSubs.filter((e) => e.user_id === myPrefId).map((e) => e.device_id);
+  const myReportSubs = reportSubs
+    .filter((e) => e.user_id === myPrefId)
+    .reduce((acc, e) => { acc[e.device_id] = e.frequency; return acc; }, {} as Record<string, ReportFrequency>);
 
   const value: Ctx = {
     authUser, authReady, login, logout,
@@ -689,7 +700,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     ingestTelemetry, addSimPacket, acknowledgeAlarm,
     myAlarmEmailEnabled, setMyAlarmEmail,
     myAlarmEmailAllDevices, myEmailDeviceIds, setMyAlarmEmailAllDevices, setMyEmailDevices,
-    myReportDeviceIds, setMyReportDevices,
+    myReportSubs, setMyReportFrequency,
     deviceCommands, queueDeviceCommand, getDeviceCommands,
     smsSettings, smsRecipients, smsTemplates, smsRecipientDevices,
     requestOrgSms, reviewOrgSms, addSmsRecipient, updateSmsRecipient, deleteSmsRecipient, assignSmsRecipientDevices, upsertSmsTemplate,

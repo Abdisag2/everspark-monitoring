@@ -5,23 +5,18 @@ import { FileBarChart2, Cpu, FileText, FileSpreadsheet, FileDown, CalendarClock 
 import { useApp } from '@/context/AppContext';
 import { TimeRangePicker } from '@/components/shared/TimeRangePicker';
 import { rangeStartMs } from '@/lib/timeRanges';
-import { windowLabel } from '@/lib/report';
+import { windowLabel, REPORT_FREQUENCIES } from '@/lib/report';
 import { downloadReportCsv, downloadReportPdf } from '@/lib/report-download';
+import type { ReportFrequency } from '@/lib/types';
 
 export function Reports() {
   const {
     currentUser, getVisibleDevices, organizations, exportDeviceTelemetry,
-    myReportDeviceIds, setMyReportDevices,
+    myReportSubs, setMyReportFrequency,
   } = useApp();
 
   const devices = getVisibleDevices();
-  const reportSel = new Set(myReportDeviceIds);
-
-  const toggleReportDevice = (id: string) => {
-    const next = new Set(reportSel);
-    if (next.has(id)) next.delete(id); else next.add(id);
-    setMyReportDevices([...next]);
-  };
+  const subscribedCount = devices.filter((d) => myReportSubs[d.id]).length;
 
   // --- Manual report generator ---
   const [genDevice, setGenDevice] = useState<string>(devices[0]?.id ?? '');
@@ -61,30 +56,40 @@ export function Reports() {
         </div>
       </div>
 
-      {/* ============ Monthly reports ============ */}
+      {/* ============ Scheduled reports ============ */}
       <div className="card p-5 space-y-4">
         <div className="flex items-center gap-2.5">
           <CalendarClock size={18} className="text-slate-400" />
           <div>
-            <p className="text-sm font-semibold text-ink">Email me a monthly report</p>
+            <p className="text-sm font-semibold text-ink">Email me a report</p>
             <p className="text-xs text-slate-400">
-              A CSV of the month&apos;s data plus a PDF summary, sent to {currentUser.email} at the start of each month
+              A CSV plus a PDF summary emailed to {currentUser.email}. Pick a cadence per device — daily, weekly, monthly, quarterly, semi-annually or yearly.
             </p>
           </div>
         </div>
 
         <div className="pt-1 space-y-1.5">
-          <p className="text-sm font-semibold text-slate-700">Which devices?</p>
+          <p className="text-sm font-semibold text-slate-700">Which devices, how often?</p>
           {devices.length === 0 && <p className="text-xs text-slate-400">No devices available.</p>}
-          {devices.map((d) => (
-            <label key={d.id} className="flex items-center gap-3 rounded-xl border border-slate-200 px-3 py-2.5 cursor-pointer hover:bg-slate-50">
-              <input type="checkbox" checked={reportSel.has(d.id)} onChange={() => toggleReportDevice(d.id)} className="h-4 w-4 accent-brand-600" />
-              <Cpu size={15} className="text-slate-400" />
-              <span className="text-sm text-ink">{d.name}</span>
-            </label>
-          ))}
-          {reportSel.size === 0 && (
-            <p className="text-xs text-slate-400">No monthly reports selected. Tick a device to start receiving them.</p>
+          {devices.map((d) => {
+            const freq = myReportSubs[d.id];
+            return (
+              <div key={d.id} className="flex items-center gap-3 rounded-xl border border-slate-200 px-3 py-2.5">
+                <Cpu size={15} className="text-slate-400 shrink-0" />
+                <span className="text-sm text-ink flex-1 min-w-0 truncate">{d.name}</span>
+                <select
+                  value={freq ?? 'off'}
+                  onChange={(e) => setMyReportFrequency(d.id, e.target.value === 'off' ? null : (e.target.value as ReportFrequency))}
+                  className={`rounded-lg border px-2.5 py-1.5 text-sm focus:outline-none focus:border-brand-400 ${freq ? 'border-brand-200 bg-brand-50 text-brand-700 font-medium' : 'border-slate-200 bg-white text-slate-500'}`}
+                >
+                  <option value="off">Off</option>
+                  {REPORT_FREQUENCIES.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
+                </select>
+              </div>
+            );
+          })}
+          {subscribedCount === 0 && (
+            <p className="text-xs text-slate-400">No scheduled reports yet. Pick a cadence for a device to start receiving them.</p>
           )}
         </div>
       </div>
