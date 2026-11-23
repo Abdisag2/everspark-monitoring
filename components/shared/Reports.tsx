@@ -52,7 +52,7 @@ export function Reports() {
         </span>
         <div>
           <h2 className="text-lg font-bold text-ink">Reports</h2>
-          <p className="text-sm text-slate-500">Monthly report emails and on-demand CSV / PDF downloads</p>
+          <p className="text-sm text-slate-500">Scheduled report emails and on-demand CSV / PDF downloads</p>
         </div>
       </div>
 
