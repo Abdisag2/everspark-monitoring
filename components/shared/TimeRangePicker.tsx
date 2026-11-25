@@ -41,7 +41,7 @@ export function TimeRangePicker({ value, onChange }: { value: string; onChange: 
       </button>
 
       {open && (
-        <div className="absolute right-0 mt-2 w-64 card shadow-card-hover z-40 animate-scale-in overflow-hidden">
+        <div className="absolute left-0 sm:left-auto sm:right-0 mt-2 w-64 max-w-[calc(100vw-2rem)] card shadow-card-hover z-50 animate-scale-in overflow-hidden">
           <div className="p-2 border-b border-slate-100">
             <div className="relative">
               <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
